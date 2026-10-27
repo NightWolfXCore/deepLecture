@@ -198,7 +198,7 @@ def claim_job(conn, job_id):
             cur.execute("SELECT id FROM lectures WHERE id=%s FOR UPDATE", (lid,))   # 1) лекция
             cur.execute(                                                            # 2) задание
                 "SELECT status, attempt, stage, "
-                "(lease_expires_at IS NOT NULL AND lease_expires_at < UTC_TIMESTAMP(3)) "
+                "(lease_expires_at IS NOT NULL AND lease_expires_at <= UTC_TIMESTAMP(3)) "
                 "FROM processing_jobs WHERE id=%s FOR UPDATE", (job_id,))
             status, attempt, stage, expired = cur.fetchone()      # перепроверка под блокировкой
             if status == "queued":
