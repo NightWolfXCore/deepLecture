@@ -55,6 +55,8 @@ services:
     environment:
       <<: *app-env
       MODEL_CACHE: /models
+      MODELS_OFFLINE: ${MODELS_OFFLINE:-false}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-intfloat/multilingual-e5-small}
       EMBEDDING_REVISION: ${EMBEDDING_REVISION:-}
       CPU_THREADS: ${CPU_THREADS:-2}
     volumes:
@@ -71,6 +73,8 @@ services:
     environment:
       <<: *app-env
       MODEL_CACHE: /models
+      MODELS_OFFLINE: ${MODELS_OFFLINE:-false}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-intfloat/multilingual-e5-small}
       EMBEDDING_REVISION: ${EMBEDDING_REVISION:-}
       WHISPER_MODEL: ${WHISPER_MODEL:-small}
       WHISPER_REVISION: ${WHISPER_REVISION:-}
@@ -78,6 +82,9 @@ services:
       LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com/v1}
       LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
       LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_AUTH_MODE: ${LLM_AUTH_MODE:-bearer}
+      LLM_ALLOW_HTTP: ${LLM_ALLOW_HTTP:-false}
+      LLM_TIMEOUT: ${LLM_TIMEOUT:-90}
     volumes:
       - storage:/data
       - models:/models

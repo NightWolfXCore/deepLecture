@@ -22,6 +22,25 @@ normal development stack. Do not store your work in these test volumes.
 production migration system. No DDL runs in application startup. Schema changes
 must first be agreed with the database owner and reflected in the contract.
 
+To run the same backend suite against the database owner's current initial
+migration without modifying their branch, export an immutable checkout into a
+temporary directory and pass the **absolute** SQL path:
+
+```sh
+# Inspect origin/repository_sql first and record its commit SHA in VALIDATION.md.
+mkdir -p /tmp/deeplecture-db-integration
+git archive origin/repository_sql | tar -x -C /tmp/deeplecture-db-integration
+TEST_SCHEMA_FILE=/tmp/deeplecture-db-integration/migrations/001_initial_schema.sql \
+  SKIP_BUILD=1 sh tests/backend/run.sh
+```
+
+Use only this disposable test project. Initialization runs on a fresh MySQL
+volume; an existing volume will not reapply the selected SQL. The launcher
+removes its test volumes after each run. This checks SQL/backend compatibility,
+not the migration runner; verify `migrate.py` separately twice on a fresh
+isolated database and check `--status`. Do not use production seeds with
+placeholder vectors to claim real semantic relevance.
+
 The launcher runs PHP unit assertions, Python unit/provider tests, real MySQL
 worker/concurrency tests and HTTP integration in sequence. CI is defined in
 `.github/workflows/backend-tests.yml` and triggers only for backend (or manually).

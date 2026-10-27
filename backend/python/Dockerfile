@@ -6,9 +6,10 @@ WORKDIR /app
 COPY backend/python/requirements*.txt ./
 COPY backend/python/app ./app
 RUN --mount=type=secret,id=proxy_ca \
-    if [ -f /run/secrets/proxy_ca ]; then cat /run/secrets/proxy_ca >> /etc/ssl/certs/ca-certificates.crt; fi; \
-    PIP_CERT=/etc/ssl/certs/ca-certificates.crt pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch==2.6.0 \
-    && PIP_CERT=/etc/ssl/certs/ca-certificates.crt pip install --no-cache-dir -r requirements-ml.txt \
+    PIP_CERT="$(if [ -f /run/secrets/proxy_ca ]; then echo /run/secrets/proxy_ca; else echo /etc/ssl/certs/ca-certificates.crt; fi)" \
+    && export PIP_CERT \
+    && pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch==2.6.0 \
+    && pip install --no-cache-dir -r requirements-ml.txt \
     && chmod -R a+rX /app \
     && useradd --uid 1000 --create-home worker \
     && mkdir -p /data/videos /data/audio /models \

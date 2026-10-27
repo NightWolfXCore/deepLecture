@@ -5,7 +5,7 @@ services:
       MAX_UPLOAD_BYTES: "1048576"
   mysql:
     volumes:
-      - ../tests/backend/fixtures/schema.sql:/docker-entrypoint-initdb.d/001-test-schema.sql:ro
+      - ${TEST_SCHEMA_FILE:-../tests/backend/fixtures/schema.sql}:/docker-entrypoint-initdb.d/001-test-schema.sql:ro
     ports:
       - "127.0.0.1:${TEST_DB_PORT:-13306}:3306"
   search:

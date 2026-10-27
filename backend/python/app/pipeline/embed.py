@@ -28,6 +28,7 @@ class Embedder:
                 path = snapshot_download(
                     self.model_name, revision=self.settings.embedding_revision,
                     cache_dir=str(self.settings.model_cache),
+                    local_files_only=self.settings.models_offline,
                     allow_patterns=["*.json", "*.safetensors", "pytorch_model.bin", "*.txt", "tokenizer.model", "sentencepiece.bpe.model"],
                 )
                 revision = Path(path).name

@@ -13,6 +13,7 @@ class Settings:
     db_password: str = ""
     storage_root: Path = Path("/data")
     model_cache: Path = Path("/models")
+    models_offline: bool = False
     embedding_model: str = "intfloat/multilingual-e5-small"
     embedding_revision: str = "main"
     whisper_model: str = "Systran/faster-whisper-small"
@@ -22,6 +23,7 @@ class Settings:
     ffmpeg_timeout: int = 1800
     llm_base_url: str = "https://api.openai.com/v1"
     llm_api_key: str = ""
+    llm_auth_mode: str = "bearer"
     llm_model: str = "gpt-4o-mini"
     llm_timeout: float = 90
     llm_allow_http: bool = False
@@ -39,6 +41,7 @@ class Settings:
             db_password=value("DB_PASSWORD", ""),
             storage_root=Path(value("STORAGE_ROOT", "/data")),
             model_cache=Path(value("MODEL_CACHE", "/models")),
+            models_offline=value("MODELS_OFFLINE", "false").lower() == "true",
             embedding_model=value("EMBEDDING_MODEL", "intfloat/multilingual-e5-small"),
             embedding_revision=value("EMBEDDING_REVISION", "main") or "main",
             whisper_model=value("WHISPER_MODEL", "Systran/faster-whisper-small"),
@@ -48,6 +51,7 @@ class Settings:
             ffmpeg_timeout=int(value("FFMPEG_TIMEOUT", "1800")),
             llm_base_url=value("LLM_BASE_URL", "https://api.openai.com/v1"),
             llm_api_key=value("LLM_API_KEY", ""), llm_model=value("LLM_MODEL", "gpt-4o-mini"),
+            llm_auth_mode=value("LLM_AUTH_MODE", "bearer").lower(),
             llm_timeout=float(value("LLM_TIMEOUT", "90")),
             llm_allow_http=value("LLM_ALLOW_HTTP", "false").lower() == "true",
             lease_seconds=int(value("LEASE_SECONDS", "120")),

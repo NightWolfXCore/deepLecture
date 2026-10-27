@@ -26,8 +26,11 @@ class Summarizer:
         address = urlsplit(cfg.llm_base_url)
         if (address.scheme != "https" and not (cfg.llm_allow_http and address.scheme == "http")) or not address.hostname:
             raise PipelineError("LLM_NOT_CONFIGURED", "Не настроен безопасный адрес LLM API")
-        if address.username or address.password or address.query or address.fragment or not cfg.llm_api_key or not cfg.llm_model:
+        if address.username or address.password or address.query or address.fragment or not cfg.llm_model:
             raise PipelineError("LLM_NOT_CONFIGURED", "Не настроен доступ к LLM API")
+        if cfg.llm_auth_mode not in ("bearer", "none") or (cfg.llm_auth_mode == "bearer" and not cfg.llm_api_key.strip()):
+            raise PipelineError("LLM_NOT_CONFIGURED", "Не настроена авторизация LLM API")
+        headers = {"Authorization": "Bearer " + cfg.llm_api_key} if cfg.llm_auth_mode == "bearer" else {}
         payload = {"model": cfg.llm_model, "messages": [
             {"role": "system", "content": SYSTEM},
             {"role": "user", "content": json.dumps(content, ensure_ascii=False)}],
@@ -38,7 +41,7 @@ class Summarizer:
             for attempt in range(3):
                 try:
                     response = client.post(cfg.llm_base_url.rstrip("/") + "/chat/completions",
-                                           headers={"Authorization": "Bearer " + cfg.llm_api_key}, json=payload)
+                                           headers=headers, json=payload)
                     if response.status_code == 429 or 500 <= response.status_code < 600:
                         if attempt < 2:
                             self.sleep(2 ** attempt)

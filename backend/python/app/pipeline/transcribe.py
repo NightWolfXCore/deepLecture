@@ -19,6 +19,7 @@ class Transcriber:
                 self.model_name,
                 revision=self.settings.whisper_revision,
                 cache_dir=str(self.settings.model_cache),
+                local_files_only=self.settings.models_offline,
                 allow_patterns=["config.json", "model.bin", "tokenizer.json", "vocabulary.*", "preprocessor_config.json"],
             )
             self.model = WhisperModel(path, device="cpu", compute_type="int8",
