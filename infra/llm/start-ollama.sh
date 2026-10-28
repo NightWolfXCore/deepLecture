@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
-model_file=${GGUF_PATH:-/imports/model.gguf}
+model_file=${GGUF_PATH:-/imports/Qwen3-4B-Q4_K_M.gguf}
 if [ ! -s "$model_file" ]; then
-    echo 'Missing GGUF: place Qwen3 4B at storage/llm/model.gguf' >&2
+    echo 'Missing GGUF: place Qwen3 4B at storage/llm/Qwen3-4B-Q4_K_M.gguf' >&2
     exit 1
 fi
 ollama serve &
@@ -21,8 +21,8 @@ until ollama list >/dev/null 2>&1; do
     fi
     sleep 1
 done
-echo 'Importing local GGUF as deeplecture-qwen3:4b'
-ollama create deeplecture-qwen3:4b -f /config/Modelfile
-ollama show deeplecture-qwen3:4b >/dev/null
-echo 'Local model deeplecture-qwen3:4b is available'
+echo 'Importing local GGUF as Qwen3-4B-Q4_K_M'
+ollama create Qwen3-4B-Q4_K_M -f /config/Modelfile
+ollama show Qwen3-4B-Q4_K_M >/dev/null
+echo 'Local model Qwen3-4B-Q4_K_M is available'
 wait "$server_pid"

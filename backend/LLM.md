@@ -1,19 +1,19 @@
 # LLM: локальный Qwen3 4B и внешний API
 
-Основной сценарий — Qwen3 4B Q4 GGUF в `storage/llm/model.gguf`.
+Основной сценарий — Qwen3 4B Q4 GGUF в `storage/llm/Qwen3-4B-Q4_K_M.gguf`.
 Полный запуск обычными командами `docker compose`: [README](../README.md#запуск).
 `.env` создаётся автоматически при старте MySQL/Ollama, если его нет;
 существующий файл сохраняется. [Импорт GGUF](GGUF.md).
 
 Локальный сервер Ollama работает внутри Compose без отдельной установки.
-`LLM_BASE_URL=http://ollama:11434/v1`, `LLM_MODEL=deeplecture-qwen3:4b`,
+`LLM_BASE_URL=http://ollama:11434/v1`, `LLM_MODEL=Qwen3-4B-Q4_K_M`,
 `LLM_AUTH_MODE=none`, `LLM_ALLOW_HTTP=true`, `LLM_REASONING_EFFORT=none`.
 API использует `/chat/completions` и JSON mode. Главы привязываются к реальным
 ID сегментов; придуманные моделью ID отклоняются. Для чата источники также
 проверяются. Фактическую точность ответов нужно оценить на лекции.
 
 ```text
-docker compose exec ollama ollama show deeplecture-qwen3:4b
+docker compose exec ollama ollama show Qwen3-4B-Q4_K_M
 docker compose run --rm --no-deps worker python -m app.check_llm
 ```
 

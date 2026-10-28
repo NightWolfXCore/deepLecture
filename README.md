@@ -119,7 +119,7 @@ git pull --ff-only origin main
 Проект называется `deeplecture-demo` и использует собственные volumes.
 
 Создайте папку **`storage/llm`** и положите туда полный файл **Qwen3 4B Q4 GGUF**
-под именем **`model.gguf`**. Итоговый путь от корня: `storage/llm/model.gguf`.
+под именем **`Qwen3-4B-Q4_K_M.gguf`**. Итоговый путь от корня: `storage/llm/Qwen3-4B-Q4_K_M.gguf`.
 Не используйте `mmproj`, адаптер или одну часть разделённой модели.
 Q4_K_M подходит. Импорт сохраняет квантизацию исходного файла.
 Файл GGUF, видео и секреты не коммитятся и не включаются в build-контекст.
@@ -134,8 +134,8 @@ docker compose config --quiet
 docker compose build php search
 docker compose up -d mysql ollama
 docker compose run --rm migrate
-docker compose exec ollama ollama create deeplecture-qwen3:4b -f /config/Modelfile
-docker compose exec ollama ollama show deeplecture-qwen3:4b
+docker compose exec ollama ollama create Qwen3-4B-Q4_K_M -f /config/Modelfile
+docker compose exec ollama ollama show Qwen3-4B-Q4_K_M
 docker compose run --rm --no-deps worker python -m app.prepare_models
 docker compose run --rm --no-deps worker python -m app.check_llm
 ```
@@ -152,7 +152,7 @@ PHP, search и worker ждут его успешного завершения. �
 Уже применённые SQL-файлы изменять нельзя.
 
 При старте контейнер Ollama автоматически импортирует GGUF под именем
-`deeplecture-qwen3:4b`; healthcheck проверяет наличие именно этой модели.
+`Qwen3-4B-Q4_K_M`; healthcheck проверяет наличие именно этой модели.
 Команда `ollama create` выше остаётся доступна для явного повторного импорта. `ollama show` показывает реальный тип
 квантизации: убедитесь, что это Q4 и нужная модель Qwen3 4B.
 `prepare_models` отдельно загружает настоящие Whisper и E5; GGUF их не заменяет.
@@ -300,8 +300,8 @@ docker compose restart php search worker
 Если Ollama возвращает HTTP 404 при создании конспекта, проверьте имя модели:
 
 ```text
-docker compose exec ollama ollama create deeplecture-qwen3:4b -f /config/Modelfile
-docker compose exec ollama ollama show deeplecture-qwen3:4b
+docker compose exec ollama ollama create Qwen3-4B-Q4_K_M -f /config/Modelfile
+docker compose exec ollama ollama show Qwen3-4B-Q4_K_M
 docker compose run --rm --no-deps worker python -m app.check_llm
 ```
 

@@ -1,4 +1,4 @@
-# Automatic local demo: no configuration editing; add storage/llm/model.gguf.
+# Automatic local demo: no configuration editing; add storage/llm/Qwen3-4B-Q4_K_M.gguf.
 name: deeplecture-demo
 x-app-env:
   DB_HOST: mysql
@@ -107,7 +107,7 @@ services:
       EMBEDDING_REVISION: ${EMBEDDING_REVISION:-}
       CPU_THREADS: ${CPU_THREADS:-2}
       LLM_BASE_URL: http://ollama:11434/v1
-      LLM_MODEL: deeplecture-qwen3:4b
+      LLM_MODEL: Qwen3-4B-Q4_K_M
       LLM_API_KEY: ''
       LLM_AUTH_MODE: none
       LLM_REASONING_EFFORT: none
@@ -154,7 +154,7 @@ services:
       IMPORT_TIMEOUT: ${IMPORT_TIMEOUT:-1800}
       CPU_THREADS: ${CPU_THREADS:-2}
       LLM_BASE_URL: http://ollama:11434/v1
-      LLM_MODEL: deeplecture-qwen3:4b
+      LLM_MODEL: Qwen3-4B-Q4_K_M
       LLM_API_KEY: ''
       LLM_AUTH_MODE: none
       LLM_REASONING_EFFORT: none
@@ -205,7 +205,7 @@ services:
       - CMD
       - ollama
       - show
-      - deeplecture-qwen3:4b
+      - Qwen3-4B-Q4_K_M
       interval: 10s
       timeout: 5s
       retries: 60
