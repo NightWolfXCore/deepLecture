@@ -24,6 +24,7 @@ class Settings:
     llm_base_url: str = "https://api.openai.com/v1"
     llm_api_key: str = ""
     llm_auth_mode: str = "bearer"
+    llm_reasoning_effort: str = ""
     llm_model: str = "gpt-4o-mini"
     llm_timeout: float = 90
     llm_allow_http: bool = False
@@ -52,6 +53,7 @@ class Settings:
             llm_base_url=value("LLM_BASE_URL", "https://api.openai.com/v1"),
             llm_api_key=value("LLM_API_KEY", ""), llm_model=value("LLM_MODEL", "gpt-4o-mini"),
             llm_auth_mode=value("LLM_AUTH_MODE", "bearer").lower(),
+            llm_reasoning_effort=value("LLM_REASONING_EFFORT", "").strip(),
             llm_timeout=float(value("LLM_TIMEOUT", "90")),
             llm_allow_http=value("LLM_ALLOW_HTTP", "false").lower() == "true",
             lease_seconds=int(value("LEASE_SECONDS", "120")),

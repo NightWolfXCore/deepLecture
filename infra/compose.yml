@@ -7,6 +7,10 @@ x-app-env: &app-env
   DB_USER: ${DB_USER:-deeplecture}
   DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
   STORAGE_ROOT: /data
+  # Keep external proxies for model downloads/API calls; local service names
+  # must resolve directly inside Compose even on a managed proxy host.
+  NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1},mysql,php,nginx,search,ollama
+  no_proxy: ${NO_PROXY:-localhost,127.0.0.1},mysql,php,nginx,search,ollama
 
 services:
   mysql:
@@ -83,6 +87,7 @@ services:
       LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_AUTH_MODE: ${LLM_AUTH_MODE:-bearer}
+      LLM_REASONING_EFFORT: ${LLM_REASONING_EFFORT:-}
       LLM_ALLOW_HTTP: ${LLM_ALLOW_HTTP:-false}
       LLM_TIMEOUT: ${LLM_TIMEOUT:-90}
     volumes:

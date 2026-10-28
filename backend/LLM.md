@@ -7,6 +7,11 @@
 
 ## Локальный Qwen через Ollama
 
+Отдельная установка Ollama на хост не требуется. Compose скачивает готовый
+образ `ollama/ollama:0.40.12` и запускает сервер в контейнере. `docker compose
+build` собирает наши PHP/Python-сервисы; веса Qwen в образ Ollama не входят.
+Один раз скачайте их через `ollama pull`, они сохранятся в `ollama-models`.
+
 Из корня репозитория. Не перезаписывайте уже настроенные файлы:
 
 ```sh
@@ -19,8 +24,8 @@ dcl() {
 }
 dcl build
 dcl up -d ollama
-dcl exec ollama ollama pull qwen2.5:3b
-dcl exec ollama ollama show qwen2.5:3b
+dcl exec ollama ollama pull qwen3.5:4b
+dcl exec ollama ollama show qwen3.5:4b
 dcl run --rm --no-deps worker python -m app.check_llm
 ```
 
@@ -34,16 +39,36 @@ Healthcheck Ollama подтверждает только работу серве
 Шаблон задаёт 16384 токена контекста, один параллельный запрос и 300 секунд
 таймаута на попытку. Возможны три попытки при сетевой ошибке/429/5xx.
 Контекст включает системный prompt, JSON с русским текстом и до 3000 выходных
-токенов. Скорость, память и качество Qwen на CPU ещё нужно измерить на лекции;
-модель 3B может вернуть некорректный JSON/ID — такой ответ не публикуется.
+токенов. Для Qwen3.5 4B задано `LLM_REASONING_EFFORT=none`: Ollama отключает
+thinking и формирует конечный JSON в выделенном лимите. У внешнего API эта
+настройка по умолчанию пустая, поле не отправляется. Скорость, память и качество
+на CPU ещё нужно измерить на лекции; модель может вернуть некорректный JSON/ID —
+такой ответ не публикуется.
 
 Предпочтительная квантизация — Q4_K_M. Фактическую квантизацию и digest тега
-`qwen2.5:3b` проверьте через `ollama show` после скачивания и сохраните в отчёте.
-Исходный вариант весов: https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF.
+`qwen3.5:4b` проверьте через `ollama show` после скачивания и сохраните в отчёте.
+Каталог модели: https://ollama.com/library/qwen3.5:4b.
 Другой сервер, например llama.cpp с этим GGUF, должен предоставлять тот же
 OpenAI-compatible JSON mode. Его URL/модель задаются в `.env.llm`; для сервера
 без авторизации используйте явный `none`, для HTTP дополнительно `LLM_ALLOW_HTTP`.
 Compose-имя `ollama` относится только к приложенному сервису Ollama.
+
+Если `.env.llm` уже создан для старой модели, измените в нём только
+`LLM_MODEL=qwen3.5:4b`, добавьте `LLM_REASONING_EFFORT=none` и, если закрепляли
+старый образ, `OLLAMA_IMAGE=ollama/ollama:0.40.12`. Автоматически пользовательские
+конфигурации не перезаписываются. Обновление контейнера и модели:
+
+```sh
+dcl pull ollama
+dcl up -d ollama
+dcl exec ollama ollama pull qwen3.5:4b
+dcl exec ollama ollama show qwen3.5:4b
+dcl up -d --build worker
+dcl exec worker python -m app.check_llm
+```
+
+Поддержка параметра reasoning описана в [OpenAI compatibility Ollama](https://github.com/ollama/ollama/blob/v0.40.12/docs/api/openai-compatibility.mdx).
+Проверка существования образа и протокола не заменяет реальный inference.
 
 После подготовки схемы БД по инструкции владельца:
 

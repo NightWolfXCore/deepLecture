@@ -1,7 +1,7 @@
 # Optional local LLM. No Ollama port is published outside the Compose network.
 services:
   ollama:
-    image: ollama/ollama:0.6.8
+    image: ${OLLAMA_IMAGE:-ollama/ollama:0.40.12}
     environment:
       OLLAMA_HOST: 0.0.0.0:11434
       OLLAMA_CONTEXT_LENGTH: ${OLLAMA_CONTEXT_LENGTH:-16384}
@@ -15,10 +15,6 @@ services:
       timeout: 5s
       retries: 30
   worker:
-    environment:
-      # Keep external proxy settings; resolve the local LLM inside Compose.
-      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1},ollama,mysql,search
-      no_proxy: ${NO_PROXY:-localhost,127.0.0.1},ollama,mysql,search
     depends_on:
       ollama:
         condition: service_healthy

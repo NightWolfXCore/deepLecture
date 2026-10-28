@@ -35,6 +35,8 @@ class Summarizer:
             {"role": "system", "content": SYSTEM},
             {"role": "user", "content": json.dumps(content, ensure_ascii=False)}],
             "response_format": {"type": "json_object"}, "temperature": 0.1, "max_tokens": 3000}
+        if cfg.llm_reasoning_effort:
+            payload["reasoning_effort"] = cfg.llm_reasoning_effort
         own_client = self.client is None
         client = self.client or httpx.Client(timeout=cfg.llm_timeout, follow_redirects=False)
         try:

@@ -60,7 +60,8 @@ Python: те же DB-параметры, `MODEL_CACHE`, `EMBEDDING_MODEL`,
 
 Конспекты: `LLM_BASE_URL` (URL с `/v1`), `LLM_MODEL`, `LLM_API_KEY`,
 `LLM_AUTH_MODE` (`bearer` по умолчанию, `none` — явное отключение авторизации),
-`LLM_TIMEOUT`, `LLM_ALLOW_HTTP` (`false` по умолчанию).
+`LLM_TIMEOUT`, `LLM_ALLOW_HTTP` (`false` по умолчанию),
+`LLM_REASONING_EFFORT` (пусто по умолчанию; `none` для локального Qwen3.5 4B).
 Адаптер использует OpenAI-compatible `/chat/completions` и JSON response format.
 Другой провайдер должен поддерживать этот протокол; произвольный API без адаптера
 не заработает. HTTP допускается явным `LLM_ALLOW_HTTP=true` для локального
@@ -73,6 +74,7 @@ Python: те же DB-параметры, `MODEL_CACHE`, `EMBEDDING_MODEL`,
 `MODELS_OFFLINE=true` запрещает загрузчикам ASR/E5 скачивать отсутствующие
 веса; нужны уже заполненный `models` и закреплённые ревизии.
 Проверенное состояние проекта и пробелы по ТЗ: [STATUS.md](STATUS.md).
+Подключение актуального UI без изменения ветки участника: [FRONTEND.md](FRONTEND.md).
 
 Для скачивания весов нужны `huggingface.co` и фактические CDN-домены, на которые
 перенаправляет Hugging Face (например, `cas-bridge.xethub.hf.co`). Для конспектов —
