@@ -49,13 +49,12 @@
       throw new ApiError('Нет связи с сервером', { code: 'NETWORK' });
     }
     let body = null;
-    try { body = await res.json(); } catch { /* не JSON (например, HTML от Nginx) */ }
+    try { body = await res.json(); } catch {  }
     if (!res.ok) throw toError(res.status, body);
     if (!body || !('data' in body)) throw new ApiError('Сервер вернул неожиданный ответ', { status: res.status, code: 'BAD_RESPONSE' });
     return body;
   }
 
-  // Загрузка через XHR — чтобы показывать прогресс
   function uploadLecture(title, file, onProgress) {
     return new Promise((resolve, reject) => {
       const fd = new FormData();
@@ -68,7 +67,7 @@
       xhr.onerror = () => reject(new ApiError('Нет связи с сервером', { code: 'NETWORK' }));
       xhr.onload = () => {
         let body = null;
-        try { body = JSON.parse(xhr.responseText); } catch { /* ignore */ }
+        try { body = JSON.parse(xhr.responseText); } catch {  }
         if (xhr.status >= 200 && xhr.status < 300 && body && body.data) resolve(body);
         else reject(toError(xhr.status, body));
       };
@@ -79,11 +78,14 @@
   window.ApiError = ApiError;
   window.RealApi = {
     uploadLecture,
+    importLecture: (title, url) => request('/lectures/import', { method: 'POST', json: { title, url } }),
     listLectures: (page, perPage) => request(`/lectures?page=${page}&per_page=${perPage}`),
     getLecture: (id) => request(`/lectures/${encodeURIComponent(id)}`),
     getTranscript: (id) => request(`/lectures/${encodeURIComponent(id)}/transcript`),
     getSummary: (id) => request(`/lectures/${encodeURIComponent(id)}/summary`),
     search: (payload, signal) => request('/search', { method: 'POST', json: payload, signal }),
-    retry: (id) => request(`/lectures/${encodeURIComponent(id)}/retry`, { method: 'POST' })
+    retry: (id) => request(`/lectures/${encodeURIComponent(id)}/retry`, { method: 'POST' }),
+    getTerms: (id) => request(`/lectures/${encodeURIComponent(id)}/terms`),
+    chat: (id, payload, signal) => request(`/lectures/${encodeURIComponent(id)}/chat`, { method: 'POST', json: payload, signal })
   };
 })();

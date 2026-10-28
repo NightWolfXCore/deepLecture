@@ -1,4 +1,3 @@
-/* ============ Палитра DeepLecture ============ */
 [data-bs-theme="dark"] {
   --bg: #120A20;
   --surface: #1B1030;
@@ -30,7 +29,6 @@ body {
 }
 .tnum { font-variant-numeric: tabular-nums; }
 
-/* ============ Шапка и логотип ============ */
 .app-header {
   background: rgba(18, 10, 32, .82);
   backdrop-filter: blur(10px);
@@ -43,7 +41,6 @@ body {
 .brand-name b { font-weight: 700; color: #fff; }
 .app-footer { color: var(--muted); border-top: 1px solid var(--line); margin-top: 2rem; }
 
-/* ============ Главный блок ============ */
 .hero {
   display: grid; grid-template-columns: 1.1fr 1fr; gap: 2rem; align-items: center;
   padding: clamp(1.25rem, 4vw, 2.5rem);
@@ -62,7 +59,7 @@ body {
   border: 1px solid var(--line); border-radius: 999px; padding: .25rem .75rem;
   font-size: .85rem; color: #D7C9FF; background: rgba(139, 92, 246, .12);
 }
-/* «Звуковая волна» с отмеченным фрагментом — отсылка к поиску по таймкоду */
+
 .wave { display: flex; align-items: flex-end; gap: 3px; height: 150px; }
 .wave-bar { flex: 1; background: #4A2D86; border-radius: 3px; }
 .wave-bar.hot { background: var(--accent-2); box-shadow: 0 0 12px rgba(183, 156, 255, .6); }
@@ -71,7 +68,6 @@ body {
   .wave { height: 80px; }
 }
 
-/* ============ Панели, формы, списки ============ */
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: .6rem; }
 
 .form-control {
@@ -122,11 +118,9 @@ body {
   --bs-nav-link-hover-color: #fff;
 }
 
-/* Бейджи статусов — в палитре сайта */
 .badge.text-bg-info { background-color: #6D3FD1 !important; color: #fff !important; }
 .badge.text-bg-secondary { background-color: #4A3B6B !important; color: #fff !important; }
 
-/* ============ Видео и субтитры ============ */
 .player {
   display: block; width: 100%; aspect-ratio: 16 / 9; background: #07030F;
   border: 1px solid var(--line); border-radius: .6rem;
@@ -139,7 +133,6 @@ body {
 }
 .subtitle.is-live { border-left-color: var(--accent-2); background: rgba(139, 92, 246, .2); color: #fff; }
 
-/* ============ Транскрипт, оглавление, результаты ============ */
 .scroll-list { position: relative; max-height: min(60vh, 34rem); overflow-y: auto; scrollbar-color: #4A2D86 transparent; }
 .seg, .chapter {
   display: flex; gap: .75rem; width: 100%; text-align: left;
@@ -162,3 +155,58 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .progress-bar-animated { animation: none; }
 }
+
+.mode-switch .nav-link {
+  color: var(--muted);
+  border: 1px solid var(--line);
+  padding: .3rem .9rem;
+  margin-right: .4rem;
+}
+.mode-switch .nav-link:hover { color: #fff; border-color: var(--accent-2); }
+.mode-switch .nav-link.active { background: #7C3AED; border-color: #7C3AED; color: #fff; }
+
+.term-mark {
+  background: rgba(183, 156, 255, .22);
+  color: #E6DBFF;
+  border-bottom: 1px dashed var(--accent-2);
+  border-radius: .2rem;
+  padding: 0 .1rem;
+}
+.term-chip {
+  border: 1px solid var(--line);
+  background: rgba(139, 92, 246, .12);
+  color: #D7C9FF;
+  border-radius: 999px;
+  padding: .25rem .85rem;
+  font-size: .9rem;
+}
+.term-chip:hover { border-color: var(--accent-2); color: #fff; }
+.term-chip.active { background: #7C3AED; border-color: #7C3AED; color: #fff; }
+.term-chip:focus-visible, .source-chip:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+.inset { background: var(--surface-2); border: 1px solid var(--line); border-radius: .5rem; padding: .75rem .9rem; }
+
+.source-chip {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--accent-2);
+  border-radius: .4rem;
+  padding: .05rem .5rem;
+  font-size: .85rem;
+}
+.source-chip:hover { background: var(--surface-2); color: #fff; }
+
+.chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: .6rem;
+  max-height: min(50vh, 26rem);
+  overflow-y: auto;
+  margin-bottom: .9rem;
+  scrollbar-color: #4A2D86 transparent;
+}
+.msg { max-width: 92%; padding: .55rem .8rem; border-radius: .7rem; white-space: pre-wrap; }
+.msg-user { align-self: flex-end; background: #5B21B6; color: #fff; }
+.msg-assistant { align-self: flex-start; background: var(--surface-2); border: 1px solid var(--line); }
+.msg-pending { color: var(--muted); }
+.msg-error { border-color: #8E3B5A; color: #F3B8CC; }
+.msg-sources { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin-top: .5rem; white-space: normal; }
