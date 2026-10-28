@@ -20,11 +20,19 @@ try {
     }
     [$status, $body] = (new App())->dispatch($_SERVER['REQUEST_METHOD'] ?? 'GET', $path);
     http_response_code($status);
+    if ($body instanceof \DeepLecture\Download) {
+        header('Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+        header('Content-Disposition: attachment; filename="' . $body->filename . '"');
+        header('Content-Length: ' . strlen($body->content));
+        echo $body->content;
+        exit;
+    }
     echo json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
 } catch (Throwable $error) {
     if (!$error instanceof ApiError) {
         // Do not log raw database/upstream messages, which can contain secrets.
-        error_log('request=' . $requestId . ' exception=' . get_class($error));
+        error_log('request=' . $requestId . ' exception=' . get_class($error)
+            . ($error instanceof PDOException ? ' db_errno=' . (int) ($error->errorInfo[1] ?? 0) : ''));
         $error = new ApiError(500, 'INTERNAL_ERROR', 'Внутренняя ошибка сервера');
     }
     http_response_code($error->status);

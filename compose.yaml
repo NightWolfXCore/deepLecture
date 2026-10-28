@@ -1,4 +1,4 @@
-# Automatic local demo: no configuration editing; add storage/llm/model.gguf.
+# Automatic local demo: no configuration editing; add storage/llm/Qwen3-4B-Q4_K_M.gguf.
 name: deeplecture-demo
 x-app-env:
   DB_HOST: mysql
@@ -50,11 +50,11 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     image: deeplecture-php:local
   migrate:
     image: deeplecture-python:local
-    profiles:
-    - setup
     environment:
       DB_HOST: mysql
       DB_PORT: '3306'
@@ -73,6 +73,7 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+    restart: on-failure:3
   nginx:
     image: nginx:1.27-alpine
     ports:
@@ -106,12 +107,13 @@ services:
       EMBEDDING_REVISION: ${EMBEDDING_REVISION:-}
       CPU_THREADS: ${CPU_THREADS:-2}
       LLM_BASE_URL: http://ollama:11434/v1
-      LLM_MODEL: deeplecture-qwen3:4b
+      LLM_MODEL: Qwen3-4B-Q4_K_M
       LLM_API_KEY: ''
       LLM_AUTH_MODE: none
       LLM_REASONING_EFFORT: none
+      LLM_STRUCTURED_OUTPUT: 'true'
       LLM_ALLOW_HTTP: 'true'
-      LLM_TIMEOUT: '300'
+      LLM_TIMEOUT: '1200'
     volumes:
     - models:/models
     command:
@@ -124,6 +126,9 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
   worker:
     image: deeplecture-python:local
     group_add:
@@ -150,12 +155,13 @@ services:
       IMPORT_TIMEOUT: ${IMPORT_TIMEOUT:-1800}
       CPU_THREADS: ${CPU_THREADS:-2}
       LLM_BASE_URL: http://ollama:11434/v1
-      LLM_MODEL: deeplecture-qwen3:4b
+      LLM_MODEL: Qwen3-4B-Q4_K_M
       LLM_API_KEY: ''
       LLM_AUTH_MODE: none
       LLM_REASONING_EFFORT: none
+      LLM_STRUCTURED_OUTPUT: 'true'
       LLM_ALLOW_HTTP: 'true'
-      LLM_TIMEOUT: '300'
+      LLM_TIMEOUT: '1200'
     volumes:
     - storage:/data
     - models:/models
@@ -168,6 +174,9 @@ services:
         condition: service_healthy
       ollama:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
   ollama:
     image: ${OLLAMA_IMAGE:-ollama/ollama:0.40.12}
     environment:
@@ -189,17 +198,27 @@ services:
       read_only: true
       bind:
         create_host_path: false
+    - type: bind
+      source: ./infra/llm/start-ollama.sh
+      target: /config/start-ollama.sh
+      read_only: true
     healthcheck:
       test:
       - CMD
       - ollama
-      - list
+      - show
+      - Qwen3-4B-Q4_K_M
       interval: 10s
       timeout: 5s
-      retries: 30
+      retries: 60
+      start_period: 120s
     depends_on:
       init-env:
         condition: service_completed_successfully
+    restart: unless-stopped
+    entrypoint:
+    - sh
+    - /config/start-ollama.sh
   init-env:
     image: deeplecture-php:local
     volumes:

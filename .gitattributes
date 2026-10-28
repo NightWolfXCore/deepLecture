@@ -1,0 +1,2 @@
+# Scripts execute inside Linux containers, including checkouts on Windows.
+*.sh text eol=lf

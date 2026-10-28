@@ -86,6 +86,14 @@ class Worker:
         audio_file = audio_dir / f"{job['id']}-{job['worker_token']}.wav"
         try:
             with Heartbeat(self.repository, job, self.heartbeat_interval) as heartbeat:
+                if job.get('summary_only'):
+                    stage = 'summarizing'
+                    segments = self.repository.summary_segments(job)
+                    summary = self.summarizer.summarize(segments)
+                    heartbeat.check()
+                    self.repository.summary_ready(job, summary)
+                    logger.info('Regenerated summary lecture %s', job['lecture_id'])
+                    return True
                 audio_dir.mkdir(parents=True, exist_ok=True)
                 source = self.importer.source(job)
                 if source is not None:

@@ -14,7 +14,7 @@ def main():
     try:
         result = Summarizer(Settings.from_env()).summarize(segments)
     except PipelineError as exc:
-        print(f"LLM smoke FAILED: {exc.code}", file=sys.stderr)
+        print(f"LLM smoke FAILED: {exc.code}: {exc.message}", file=sys.stderr)
         return 1
     print(f"LLM smoke OK: {len(result['text'])} characters, {len(result['chapters'])} anchored chapters")
     print("Protocol and anchors passed; lecture accuracy still requires human review.")

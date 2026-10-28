@@ -1,5 +1,5 @@
 # Optional local single-file GGUF import, after compose.ollama.yml.
-# Create storage/llm and place the model at storage/llm/model.gguf first.
+# Create storage/llm and place the model at storage/llm/Qwen3-4B-Q4_K_M.gguf first.
 services:
   ollama:
     volumes:

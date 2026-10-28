@@ -6,6 +6,20 @@
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   let cleanup = null;
 
+  const CATEGORIES = {mathematics:'Математика',russian:'Русский язык',physics:'Физика',informatics:'Информатика',chemistry:'Химия',biology:'Биология',history:'История',geography:'География',literature:'Литература',foreign_languages:'Иностранные языки',other:'Другое'};
+  const AI_NOTICE = 'ИИ может ошибаться — проверяйте определения, формулы и выводы по материалам лекции.';
+  const categorySelect = (id, all = false) => h('select', {id, class:'form-select'},
+    all ? h('option', {value:''}, 'Все предметы') : null,
+    Object.entries(CATEGORIES).map(([value,label]) => h('option', {value}, label)));
+  function summaryNodes(text) {
+    return text.split(/\r?\n/).filter(line => line.trim()).map(line => {
+      const heading = line.match(/^(#{1,3})\s+(.+)$/);
+      const bullet = line.match(/^[-*]\s+(.+)$/);
+      const content = heading ? heading[2] : bullet ? '• ' + bullet[1] : line;
+      const parts = content.split(/(\*\*[^*]+\*\*)/g).map(part => part.startsWith('**') && part.endsWith('**') ? h('strong', null, part.slice(2,-2)) : part);
+      return h(heading ? 'h3' : 'p', {class:heading ? 'h5 mt-4 mb-2' : 'summary-text mb-2'}, parts);
+    });
+  }
   const STAGES = ['queued', 'extracting', 'transcribing', 'indexing', 'summarizing', 'ready'];
   const STATUS = {
     queued: { label: 'В очереди', cls: 'text-bg-secondary' },
@@ -101,7 +115,7 @@
     const id = params.get('lecture');
     const t = parseFloat(params.get('t'));
     if (id) lectureView(id, Number.isFinite(t) && t >= 0 ? t : null);
-    else catalogView();
+    else catalogView(params.get('view') === 'catalog');
   }
   document.addEventListener('click', (e) => {
     const a = e.target.closest('a[data-nav]');
@@ -192,10 +206,15 @@
     return { run, cancel };
   }
 
-  function catalogView() {
+  function catalogView(catalogOnly = false) {
     document.title = 'DeepLecture — поиск по видеолекциям';
     $app.replaceChildren();
-    const S = { page: 1, alive: true, timer: null };
+    const S = { page: 1, alive: true, timer: null, request: 0 };
+    const categoryInput = categorySelect('f-category');
+    categoryInput.value = 'other';
+    const filter = categorySelect('catalog-category', true);
+    filter.value = new URLSearchParams(location.search).get('category') || '';
+    filter.addEventListener('change', () => { S.page = 1; const url = new URL(location.href); if (filter.value) url.searchParams.set('category', filter.value); else url.searchParams.delete('category'); history.replaceState({}, '', url); load(false); });
     const PER = 10;
 
     const URL_HOST = /^(?:[\w-]+\.)?(?:youtube\.com|youtu\.be|vimeo\.com)$/i;
@@ -232,6 +251,7 @@
       h('div', { class: 'row g-3' },
         h('div', { class: 'col-md-6' }, h('label', { class: 'form-label', for: 'f-title' }, 'Название'), titleInput, titleErr),
         h('div', { class: 'col-md-6' }, fileGroup, urlGroup)),
+      h('div', {class:'mt-3'}, h('label', {class:'form-label', for:'f-category'}, 'Предмет'), categoryInput),
       progress, formAlert,
       h('div', { class: 'mt-3' }, submitBtn));
 
@@ -254,12 +274,13 @@
       gResults);
 
     const listBox = h('div');
-    $app.append(
-      hero(),
-      globalForm,
-      form,
-      h('h2', { class: 'h5 mb-3' }, 'Все лекции'),
-      listBox);
+    if (catalogOnly) {
+      document.title = 'Каталог лекций — DeepLecture';
+      $app.append(h('h1', {class:'h3 mb-3'}, 'Каталог лекций'),
+        h('div', {class:'panel p-3 mb-4'}, h('label', {for:'catalog-category',class:'form-label'}, 'Предмет'), filter), listBox);
+    } else {
+      $app.append(hero(), globalForm, form, h('a', {href:'?view=catalog', 'data-nav':true, class:'btn btn-outline-primary'}, 'Открыть каталог лекций'));
+    }
 
     const submitLabel = () => (mode === 'file' ? 'Загрузить лекцию' : 'Добавить по ссылке');
 
@@ -314,8 +335,8 @@
       else submitBtn.textContent = 'Отправляем ссылку…';
       try {
         const res = mode === 'file'
-          ? await API.uploadLecture(title, file, (p) => { bar.style.width = Math.round(p * 100) + '%'; })
-          : await API.importLecture(title, url);
+          ? await API.uploadLecture(title, file, (p) => { bar.style.width = Math.round(p * 100) + '%'; }, categoryInput.value)
+          : await API.importLecture(title, url, categoryInput.value);
         if (!S.alive) return;
         navigate(lectureHref(res.data.id));
       } catch (err) {
@@ -342,6 +363,7 @@
           h('span', { class: 'fw-medium flex-grow-1' }, l.title),
           h('span', { class: 'small text-body-secondary tnum' }, l.duration_ms ? formatTime(l.duration_ms) : ''),
           h('span', { class: 'small text-body-secondary' }, formatDate(l.created_at)),
+          h('span', {class:'badge text-bg-secondary'}, CATEGORIES[l.category] || CATEGORIES.other),
           h('span', { class: `badge ${st.cls}` }, st.label));
       }));
       const pages = Math.max(1, Math.ceil(meta.total / meta.per_page));
@@ -349,7 +371,7 @@
         h('button', { class: 'btn btn-outline-secondary btn-sm', type: 'button', disabled: S.page <= 1, onClick: () => { S.page--; load(false); } }, 'Назад'),
         h('span', { class: 'small text-body-secondary' }, `Страница ${S.page} из ${pages}`),
         h('button', { class: 'btn btn-outline-secondary btn-sm', type: 'button', disabled: S.page >= pages, onClick: () => { S.page++; load(false); } }, 'Вперёд')) : null;
-      listBox.replaceChildren(list, pager);
+      listBox.replaceChildren(...[list, pager].filter(Boolean));
     }
 
     function schedule(again) {
@@ -357,10 +379,12 @@
       if (again && S.alive) S.timer = setTimeout(() => load(true), 5000);
     }
     async function load(silent) {
+      const request = ++S.request;
       if (!silent) listBox.replaceChildren(spinner());
       try {
-        const res = await API.listLectures(S.page, PER);
+        const res = await API.listLectures(S.page, PER, filter.value);
         if (!S.alive) return;
+        if (request !== S.request) return;
         renderList(res);
         schedule(res.data.some((l) => !isFinal(l.status)));
       } catch (err) {
@@ -372,7 +396,7 @@
         schedule(true);
       }
     }
-    load(false);
+    if (catalogOnly) load(false);
     cleanup = () => { S.alive = false; clearTimeout(S.timer); globalSearcher.cancel(); };
   }
 
@@ -399,6 +423,16 @@
     const subtitle = h('p', { class: 'subtitle', 'aria-live': 'off' }, SUB_HINT);
 
     const summaryBox = h('div');
+    const downloadSummary = h('a', {class:'btn btn-outline-primary btn-sm mb-3 d-none', href:CFG.API_BASE + '/lectures/' + encodeURIComponent(id) + '/summary.docx', download:true}, 'Скачать конспект .docx');
+    const lectureCategory = categorySelect('lecture-category');
+    lectureCategory.addEventListener('change', async () => { const previous = S.lecture?.category || 'other'; lectureCategory.disabled = true; try { await API.setCategory(id, lectureCategory.value); if (S.lecture) S.lecture.category = lectureCategory.value; } catch (err) { lectureCategory.value = previous; toast(errMsg(err)); } finally { lectureCategory.disabled = false; } });
+    const regenerate = h('button', {type:'button',class:'btn btn-outline-secondary btn-sm mb-3 d-none',onClick:async () => {
+      regenerate.disabled = true;
+      try { await API.regenerateSummary(id); S.sm = null; downloadSummary.classList.add('d-none'); summaryBox.replaceChildren(note('Формируем учебный конспект по готовому транскрипту…')); schedulePoll(0); }
+      catch (err) { toast(errMsg(err)); }
+      finally { regenerate.disabled = false; }
+    }}, 'Создать конспект заново');
+    const regenerationHint = h('p', {class:'small text-body-secondary'});
     const chaptersBox = h('div');
 
     const qInput = h('input', { class: 'form-control', id: 'q', type: 'search', maxlength: '1000', placeholder: 'Опишите, что хотите найти', disabled: true });
@@ -444,14 +478,16 @@
     tabs.addEventListener('shown.bs.tab', () => { if (S.activeSeg >= 0) scrollInto(S.segList, S.segEls[S.activeSeg]); });
 
     $app.append(
-      h('a', { href: './', 'data-nav': true, class: 'small d-inline-block mb-3' }, '← Все лекции'),
+      h('a', { href: '?view=catalog', 'data-nav': true, class: 'small d-inline-block mb-3' }, '← Все лекции'),
       h('div', { class: 'mb-3' }, h('div', { class: 'd-flex flex-wrap align-items-center gap-2' }, titleEl, badge), metaEl),
+      h('div', {class:'mb-3'}, h('label', {class:'form-label', for:'lecture-category'}, 'Предмет'), lectureCategory),
+      h('p', {class:'small text-body-secondary'}, AI_NOTICE),
       netBox, bannerBox,
       h('div', { class: 'row g-4' },
         h('div', { class: 'col-lg-7' },
           video, videoMsg, subtitle,
           h('section', { class: 'panel p-3 p-md-4 mt-4' },
-            h('h2', { class: 'h5 mb-3' }, 'Конспект'), summaryBox,
+            h('h2', { class: 'h5 mb-3' }, 'Конспект'), h('div', {class:'d-flex gap-2 flex-wrap'}, downloadSummary, regenerate), regenerationHint, summaryBox,
             h('h2', { class: 'h5 mt-4 mb-2' }, 'Оглавление'), chaptersBox,
             h('h2', { class: 'h5 mt-4 mb-2' }, 'Ключевые термины'), termsBox, termDetail)),
         h('div', { class: 'col-lg-5' },
@@ -504,16 +540,20 @@
 
     function applyLecture(d) {
       S.lecture = d;
+      if (!lectureCategory.disabled) lectureCategory.value = d.category || 'other';
       document.title = d.title + ' — DeepLecture';
       titleEl.textContent = d.title;
       const st = STATUS[d.status] || STATUS.queued;
       badge.className = 'badge ' + st.cls;
       badge.textContent = st.label;
-      metaEl.replaceChildren(
+      metaEl.replaceChildren(...[
         d.duration_ms ? h('span', { class: 'me-3' }, 'Длительность ' + formatTime(d.duration_ms)) : null,
-        h('span', null, 'Загружено ' + formatDate(d.created_at)));
+        h('span', null, 'Загружено ' + formatDate(d.created_at))].filter(Boolean));
 
       if (d.media_url && !S.mediaSet) { video.src = d.media_url; S.mediaSet = true; }
+      regenerate.classList.toggle('d-none', !d.availability?.search || !isFinal(d.status));
+      regenerate.disabled = !d.processing?.can_regenerate_summary;
+      regenerationHint.textContent = !d.processing?.can_regenerate_summary && d.processing?.summary_regenerate_available_at ? 'Повторная генерация доступна: ' + formatDate(d.processing.summary_regenerate_available_at) : 'Повторная генерация — не чаще одного раза в 24 часа; видео и транскрипт обрабатываться заново не будут.';
       renderBanner(d);
 
       const av = d.availability || {};
@@ -536,7 +576,11 @@
           h('div', { class: 'fw-medium' }, stage ? `Обработка остановилась на этапе «${stage}»` : 'Обработка остановилась'),
           p.error_message ? h('div', { class: 'small mt-1' }, p.error_message) : null,
           h('div', { class: 'small mt-1' }, 'То, что успело обработаться, остаётся доступным.'));
-        if (p.can_retry) {
+        const summaryOnlyFailure = p.failed_stage === 'summarizing' && d.availability?.search && d.availability?.transcript;
+        if (summaryOnlyFailure && p.can_regenerate_summary) {
+          box.append(h('button', {class:'btn btn-sm btn-outline-danger mt-2', type:'button', onClick: () => regenerate.click()}, 'Повторить создание конспекта'));
+        }
+        if (p.can_retry && !summaryOnlyFailure) {
           const btn = h('button', { class: 'btn btn-sm btn-outline-danger mt-2', type: 'button', onClick: () => retry(btn) }, 'Повторить обработку');
           box.append(btn);
         }
@@ -544,14 +588,16 @@
         return;
       }
       const idx = Math.max(0, STAGES.indexOf(d.status));
-      const pct = Math.round(((idx + 1) / STAGES.length) * 100);
+      const pct = Math.round(((idx + 1) / (STAGES.length - 1)) * 100);
+      const downloading = d.status === 'extracting' && !d.media_url;
+      const label = downloading ? 'Скачивание видео' : (STATUS[d.status] || STATUS.queued).label;
       bannerBox.append(h('div', { class: 'panel p-3' },
         h('div', { class: 'd-flex justify-content-between mb-2' },
-          h('span', { class: 'fw-medium' }, (STATUS[d.status] || STATUS.queued).label + '…'),
-          h('span', { class: 'small text-body-secondary tnum' }, pct + '%')),
-        h('div', { class: 'progress', role: 'progressbar', 'aria-valuenow': pct, 'aria-valuemin': 0, 'aria-valuemax': 100 },
+          h('span', { class: 'fw-medium' }, label + '…'),
+          h('span', { class: 'small text-body-secondary tnum' }, `Этап ${idx + 1} из ${STAGES.length - 1}`)),
+        h('div', { class: 'progress', role: 'progressbar', 'aria-valuenow': idx + 1, 'aria-valuemin': 1, 'aria-valuemax': STAGES.length - 1, 'aria-valuetext': label },
           h('div', { class: 'progress-bar progress-bar-striped progress-bar-animated', style: `width:${pct}%` })),
-        h('div', { class: 'small text-body-secondary mt-2' }, 'Транскрипт, поиск и конспект появятся по мере готовности. Страницу можно не обновлять.')));
+        h('div', { class: 'small text-body-secondary mt-2' }, downloading ? 'Сервер скачивает видео. Время зависит от размера и доступности YouTube/Vimeo; это не процент загрузки. Статус обновляется автоматически.' : 'Этапы могут занимать разное время. Транскрипт, поиск и конспект появятся по мере готовности.')));
     }
 
     function setSearchEnabled(on, d) {
@@ -600,7 +646,7 @@
     }
     function showNotFound() {
       S.alive = false;
-      $app.replaceChildren(alertBox('warning', 'Лекция не найдена. '), h('a', { href: './', 'data-nav': true, class: 'd-inline-block mt-3' }, '← Все лекции'));
+      $app.replaceChildren(alertBox('warning', 'Лекция не найдена. '), h('a', { href: '?view=catalog', 'data-nav': true, class: 'd-inline-block mt-3' }, '← Все лекции'));
     }
 
     async function retry(btn) {
@@ -619,6 +665,7 @@
       searcher.cancel();
       if (S.chatCtl) S.chatCtl.abort();
       S.chatCtl = null; S.chatBusy = false; S.chatHistory = [];
+      downloadSummary.classList.add('d-none');
       S.tr = null; S.sm = null;
       S.segments = []; S.segEls = []; S.segTexts = []; S.segList = null; S.activeSeg = -1;
       S.chapters = []; S.chapEls = []; S.activeChap = -1;
@@ -673,7 +720,8 @@
       try {
         const res = await API.getSummary(id);
         if (!S.alive) return;
-        summaryBox.replaceChildren(h('p', { class: 'summary-text mb-0' }, res.data.text));
+        summaryBox.replaceChildren(...summaryNodes(res.data.text));
+        downloadSummary.classList.remove('d-none');
         S.chapters = res.data.chapters || [];
         S.chapEls = S.chapters.map((c) => h('button', { class: `chapter level-${c.level}`, type: 'button', onClick: () => seek(c.start_ms) },
           h('span', { class: 't tnum' }, formatTime(c.start_ms)),

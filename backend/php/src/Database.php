@@ -53,8 +53,15 @@ final class Database
 
     public function query(string $sql, array $params = []): \PDOStatement
     {
-        $statement = $this->pdo()->prepare($sql);
-        $statement->execute($params);
-        return $statement;
+        try {
+            $statement = $this->pdo()->prepare($sql);
+            $statement->execute($params);
+            return $statement;
+        } catch (PDOException $error) {
+            if (in_array((int) ($error->errorInfo[1] ?? 0), [1146, 1054], true)) {
+                throw new ApiError(503, 'DATABASE_SCHEMA_NOT_READY', 'База данных ещё не подготовлена. Дождитесь завершения запуска');
+            }
+            throw $error;
+        }
     }
 }

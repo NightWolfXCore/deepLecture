@@ -2,6 +2,7 @@
 from contextlib import asynccontextmanager
 from uuid import UUID, uuid4
 import logging
+import threading
 import numpy as np
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -52,7 +53,7 @@ class ChatInput(BaseModel):
         return value.strip() if isinstance(value, str) else value
 
 
-def create_app(settings=None, repository=None, embedder=None, answerer=None):
+def create_app(settings=None, repository=None, embedder=None, answerer=None, retry_interval=30):
     cfg = settings or Settings.from_env()
     repo = repository or SearchRepository(cfg)
     encoder = embedder or Embedder(cfg)
@@ -61,12 +62,32 @@ def create_app(settings=None, repository=None, embedder=None, answerer=None):
     @asynccontextmanager
     async def lifespan(app):
         app.state.model_ready = False
+        stop = threading.Event()
+
+        def load_model():
+            try:
+                encoder.load()
+                app.state.model_ready = True
+                return True
+            except PipelineError as exc:
+                log.error("Search startup unavailable: %s; will retry", exc.code)
+                return False
+
+        def recover_model():
+            while not stop.wait(retry_interval):
+                if load_model():
+                    return
+
+        recovery = None
+        if not load_model():
+            recovery = threading.Thread(target=recover_model, daemon=True)
+            recovery.start()
         try:
-            encoder.load()
-            app.state.model_ready = True
-        except PipelineError as exc:
-            log.error("Search startup unavailable: %s", exc.code)
-        yield
+            yield
+        finally:
+            stop.set()
+            if recovery is not None:
+                recovery.join(timeout=1)
 
     app = FastAPI(title="deepLecture internal search", docs_url=None, redoc_url=None,
                   openapi_url=None, lifespan=lifespan)

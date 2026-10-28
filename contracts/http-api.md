@@ -326,3 +326,30 @@ LLM возвращает JSON и ID источников; неизвестные
 не более 90 секунд каждая; PHP ждёт до 280 секунд, Nginx до 300.
 Проверка ID защищает ссылки/таймкоды, но не гарантирует фактическую точность
 текста LLM — ответ следует сверять с приведёнными источниками.
+
+## Учебный конспект, DOCX и категории (dev)
+
+`GET /lectures/{id}/summary` сохраняет прежнюю JSON-схему. Поле `text` может
+содержать безопасное подмножество Markdown: заголовки, выделение, списки.
+`GET /lectures/{id}/summary.docx` возвращает бинарный OOXML, MIME
+`application/vnd.openxmlformats-officedocument.wordprocessingml.document`,
+`Content-Disposition: attachment`. Здесь нет JSON-обёртки. До готовности
+конспекта действуют прежние ошибки 409, для отсутствующей лекции — 404.
+
+`POST /lectures/{id}/summary/regenerate` (без тела) создаёт задание только для
+конспекта и оглавления: 202 `{data:{id,status:"summarizing",job_id}}`.
+Транскрипт, видео и поисковый индекс сохраняются. При активном задании —
+409 PROCESSING_ALREADY_ACTIVE. Повтор разрешён через 24 часа после последней
+успешной генерации; до этого — 429 SUMMARY_REGENERATION_COOLDOWN с
+`error.details.available_at` (UTC ISO 8601). Ограничение проверяется сервером
+под блокировкой лекции. Неуспешная генерация не меняет время последнего успеха.
+Карточка содержит `processing.can_regenerate_summary` и
+`processing.summary_regenerate_available_at` (UTC или null).
+
+Загрузка multipart и импорт JSON принимают необязательное `category`;
+по умолчанию `other`. Каталог и карточка возвращают это поле.
+`GET /lectures?category=mathematics` фильтрует и список, и meta.total до пагинации.
+`PATCH /lectures/{id}` с JSON `{category:"physics"}` меняет предмет без повторной
+обработки; ответ 200 `{data:{id,category}}`. Неизвестная категория — 422.
+Значения: mathematics, russian, physics, informatics, chemistry, biology,
+history, geography, literature, foreign_languages, other.

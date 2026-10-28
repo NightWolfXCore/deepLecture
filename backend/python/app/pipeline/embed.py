@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 import re
 import threading
@@ -55,7 +56,8 @@ class Embedder:
             if not np.allclose(norms, 1, atol=1e-4):
                 raise ValueError("Invalid normalization")
             return vectors
-        except Exception:
+        except Exception as exc:
+            logging.getLogger(__name__).error("Embedding unavailable: type=%s", type(exc).__name__)
             raise PipelineError("EMBEDDING_FAILED", "Не удалось вычислить семантический индекс") from None
 
     def encode_passages(self, texts):
