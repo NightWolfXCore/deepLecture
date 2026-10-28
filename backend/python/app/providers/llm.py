@@ -1,5 +1,7 @@
 """OpenAI-compatible summaries. Transcript content is never an instruction."""
 import json
+import logging
+import re
 import time
 from urllib.parse import urlsplit
 from uuid import uuid4
@@ -41,6 +43,7 @@ class Summarizer:
         client = self.client or httpx.Client(timeout=cfg.llm_timeout, follow_redirects=False)
         try:
             for attempt in range(3):
+                logging.getLogger(__name__).info("LLM request started attempt=%d", attempt + 1)
                 try:
                     response = client.post(cfg.llm_base_url.rstrip("/") + "/chat/completions",
                                            headers=headers, json=payload)
@@ -48,18 +51,39 @@ class Summarizer:
                         if attempt < 2:
                             self.sleep(2 ** attempt)
                             continue
-                    response.raise_for_status()
-                    result = json.loads(response.json()["choices"][0]["message"]["content"])
+                    if response.status_code != 200:
+                        logging.getLogger(__name__).warning("LLM rejected request http_status=%d", response.status_code)
+                        code, message = {
+                            404: ("LLM_MODEL_NOT_FOUND", "LLM вернул HTTP 404: проверьте импорт модели и адрес сервера"),
+                            401: ("LLM_AUTH_FAILED", "LLM отклонил авторизацию"),
+                            403: ("LLM_AUTH_FAILED", "LLM запретил доступ"),
+                            429: ("LLM_RATE_LIMITED", "LLM ограничил частоту запросов; повторите позже"),
+                        }.get(response.status_code, ("LLM_HTTP_ERROR", "LLM вернул ошибку HTTP " + str(response.status_code)))
+                        raise PipelineError(code, message)
+                    choice = response.json()["choices"][0]
+                    if choice.get("finish_reason") == "length":
+                        raise PipelineError("LLM_RESPONSE_TRUNCATED", "Ответ LLM обрезан по лимиту токенов; конспект не сохранён")
+                    body = choice["message"]["content"]
+                    if isinstance(body, str):
+                        fenced = re.fullmatch(r"\s*```(?:json)?\s*([\s\S]*?)\s*```\s*", body)
+                        body = fenced[1] if fenced else body
+                    result = json.loads(body)
                     if not isinstance(result, dict):
                         raise ValueError("Invalid JSON object")
+                    logging.getLogger(__name__).info("LLM JSON response received")
                     return result
                 except (httpx.TimeoutException, httpx.NetworkError):
                     if attempt == 2:
                         raise
                     self.sleep(2 ** attempt)
             raise ValueError("No LLM result")
-        except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError):
-            raise PipelineError("SUMMARY_FAILED", "Не удалось получить корректный конспект от LLM") from None
+        except httpx.TimeoutException:
+            raise PipelineError("LLM_TIMEOUT", "LLM не ответил за отведённое время; проверьте загрузку модели и ресурсы сервера") from None
+        except httpx.NetworkError:
+            raise PipelineError("LLM_UNAVAILABLE", "Не удалось подключиться к серверу LLM") from None
+        except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError) as exc:
+            logging.getLogger(__name__).warning("LLM invalid response type=%s", type(exc).__name__)
+            raise PipelineError("LLM_RESPONSE_INVALID", "LLM вернул ответ без корректного JSON; конспект не сохранён") from None
         finally:
             if own_client:
                 client.close()
@@ -68,7 +92,7 @@ class Summarizer:
         result = self._completion(content)
         if (not isinstance(result.get('text'), str) or not result['text'].strip()
                 or not isinstance(result.get('chapters'), list) or len(result['chapters']) > 200):
-            raise PipelineError('SUMMARY_FAILED', 'Не удалось получить корректный конспект от LLM')
+            raise PipelineError('LLM_RESPONSE_INVALID', 'В JSON-ответе LLM нет текста конспекта или списка глав')
         return result
 
     @staticmethod

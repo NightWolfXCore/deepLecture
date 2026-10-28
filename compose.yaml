@@ -196,18 +196,27 @@ services:
       read_only: true
       bind:
         create_host_path: false
+    - type: bind
+      source: ./infra/llm/start-ollama.sh
+      target: /config/start-ollama.sh
+      read_only: true
     healthcheck:
       test:
       - CMD
       - ollama
-      - list
+      - show
+      - deeplecture-qwen3:4b
       interval: 10s
       timeout: 5s
-      retries: 30
+      retries: 60
+      start_period: 120s
     depends_on:
       init-env:
         condition: service_completed_successfully
     restart: unless-stopped
+    entrypoint:
+    - sh
+    - /config/start-ollama.sh
   init-env:
     image: deeplecture-php:local
     volumes:

@@ -151,7 +151,9 @@ PHP, search и worker ждут его успешного завершения. �
 из `migrations/`**. Повторный запуск безопасен; тестовые seeds не нужны.
 Уже применённые SQL-файлы изменять нельзя.
 
-`ollama create` импортирует ваш файл. `ollama show` показывает реальный тип
+При старте контейнер Ollama автоматически импортирует GGUF под именем
+`deeplecture-qwen3:4b`; healthcheck проверяет наличие именно этой модели.
+Команда `ollama create` выше остаётся доступна для явного повторного импорта. `ollama show` показывает реальный тип
 квантизации: убедитесь, что это Q4 и нужная модель Qwen3 4B.
 `prepare_models` отдельно загружает настоящие Whisper и E5; GGUF их не заменяет.
 Первая сборка и загрузка весов требуют интернета, места на диске и могут занять
@@ -294,3 +296,14 @@ docker compose restart php search worker
 Ожидается `[x] 001_initial_schema.sql`. Данные и модели удалять не нужно.
 Для разработки исправления находятся в `dev`; `main` содержит только релизы.
 Логи: `docker compose logs --no-color --tail 100 php search worker migrate mysql ollama`.
+
+Если Ollama возвращает HTTP 404 при создании конспекта, проверьте имя модели:
+
+```text
+docker compose exec ollama ollama create deeplecture-qwen3:4b -f /config/Modelfile
+docker compose exec ollama ollama show deeplecture-qwen3:4b
+docker compose run --rm --no-deps worker python -m app.check_llm
+```
+
+После обновления автоматического импорта пересоздайте Ollama:
+`docker compose up -d --force-recreate ollama`.
