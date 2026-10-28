@@ -1,3 +1,10 @@
+#Важно!
+<p> Локальная модель не содержится в репозитории. Её необходимо скачивать и вставлять самому! </p>
+<a href="https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf?download=true">Скачивание Qwen 3 4B Q4</a>
+
+Хранить в пути `storage/llm/qwen3-4B-Q4.gguf`
+
+
 <div align="center">
 
 # deepLecture
