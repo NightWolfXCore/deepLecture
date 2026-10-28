@@ -49,6 +49,7 @@ thinking и формирует конечный JSON в выделенном л�
 `qwen3.5:4b` проверьте через `ollama show` после скачивания и сохраните в отчёте.
 Каталог модели: https://ollama.com/library/qwen3.5:4b.
 Для уже скачанного GGUF: [проверка квантизации и пошаговый импорт](GGUF.md).
+Для Windows: [тот же сценарий в PowerShell](GGUF-WINDOWS.md).
 Другой сервер, например llama.cpp с этим GGUF, должен предоставлять тот же
 OpenAI-compatible JSON mode. Его URL/модель задаются в `.env.llm`; для сервера
 без авторизации используйте явный `none`, для HTTP дополнительно `LLM_ALLOW_HTTP`.
