@@ -27,13 +27,14 @@ def test_local_openai_protocol_and_explicit_auth(mode, key, expected):
         assert str(request.url) == "http://ollama:11434/v1/chat/completions"
         assert request.headers.get("Authorization") == expected
         payload = json.loads(request.content)
-        assert payload["model"] == "qwen2.5:3b"
+        assert payload["model"] == "qwen3.5:4b"
+        assert payload["reasoning_effort"] == "none"
         assert payload["response_format"] == {"type": "json_object"}
         assert json.loads(payload["messages"][1]["content"])["lecture_segments"] == SEGMENTS
         result = dict(text="Конспект", chapters=[dict(title="Теорема", level=1, start_segment_id="anchor")])
         return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(result)}}]})
-    settings = replace(Settings(), llm_base_url="http://ollama:11434/v1/", llm_model="qwen2.5:3b",
-                       llm_auth_mode=mode, llm_api_key=key, llm_allow_http=True)
+    settings = replace(Settings(), llm_base_url="http://ollama:11434/v1/", llm_model="qwen3.5:4b",
+                       llm_auth_mode=mode, llm_api_key=key, llm_allow_http=True, llm_reasoning_effort="none")
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         assert Summarizer(settings, client).summarize(SEGMENTS)["chapters"][0]["start_segment_id"] == "anchor"
 
@@ -58,12 +59,24 @@ def test_invalid_llm_config_never_sends_a_request(overrides):
 
 def test_local_config_from_environment(monkeypatch):
     for name, value in dict(LLM_BASE_URL="http://ollama:11434/v1", LLM_API_KEY="", LLM_AUTH_MODE="none",
-                            LLM_ALLOW_HTTP="true", LLM_TIMEOUT="300", MODELS_OFFLINE="true").items():
+                            LLM_ALLOW_HTTP="true", LLM_TIMEOUT="300", MODELS_OFFLINE="true",
+                            LLM_REASONING_EFFORT="none").items():
         monkeypatch.setenv(name, value)
     settings = Settings.from_env()
     assert settings.llm_auth_mode == "none" and settings.llm_allow_http
     assert settings.llm_api_key == "" and settings.llm_timeout == 300
     assert settings.models_offline
+    assert settings.llm_reasoning_effort == "none"
+
+
+def test_external_default_does_not_send_optional_reasoning_parameter():
+    def handler(request):
+        assert "reasoning_effort" not in json.loads(request.content)
+        result = dict(text="Конспект", chapters=[dict(title="Теорема", level=1, start_segment_id="anchor")])
+        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(result)}}]})
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = Summarizer(replace(Settings(), llm_api_key="test-only"), client).summarize(SEGMENTS)
+    assert result["text"] == "Конспект"
 
 
 @pytest.mark.parametrize("offline", [False, True])

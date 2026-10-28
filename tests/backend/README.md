@@ -62,6 +62,12 @@ The HTTP suite generates actual MP4/WebM samples with FFmpeg and verifies:
 Deterministic vectors verify data flow, not semantic relevance. These tests do
 not replace a real-model smoke run or provider/quality evaluation.
 
+With a running isolated stack and `infra/compose.frontend.yml` mounting the
+frontend checkout, run `node tests/backend/frontend_api_smoke.mjs` (Node 18+).
+It downloads and executes the actual served API client against PHP/MySQL,
+checks real API mode, catalog parsing and error envelopes. It does not test
+browser DOM, XHR upload, video playback or ML. Set TEST_API_URL to change origin.
+
 For an already running isolated stack, the same suite can run natively:
 
 ```sh

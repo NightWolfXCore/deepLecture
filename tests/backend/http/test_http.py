@@ -54,7 +54,9 @@ def clear_database(db):
 @pytest.fixture(scope="session")
 def client():
     base = os.getenv("TEST_API_URL", "http://127.0.0.1:18080")
-    with httpx.Client(base_url=base, timeout=15) as api:
+    # This suite targets an isolated local stack. Do not proxy its traffic to
+    # an external corporate/cloud proxy inherited by the test container.
+    with httpx.Client(base_url=base, timeout=15, trust_env=False) as api:
         deadline = time.monotonic() + 90
         while True:
             try:
