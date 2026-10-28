@@ -111,6 +111,7 @@ services:
       LLM_API_KEY: ''
       LLM_AUTH_MODE: none
       LLM_REASONING_EFFORT: none
+      LLM_STRUCTURED_OUTPUT: 'true'
       LLM_ALLOW_HTTP: 'true'
       LLM_TIMEOUT: '300'
     volumes:
@@ -158,6 +159,7 @@ services:
       LLM_API_KEY: ''
       LLM_AUTH_MODE: none
       LLM_REASONING_EFFORT: none
+      LLM_STRUCTURED_OUTPUT: 'true'
       LLM_ALLOW_HTTP: 'true'
       LLM_TIMEOUT: '300'
     volumes:

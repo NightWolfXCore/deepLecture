@@ -576,7 +576,11 @@
           h('div', { class: 'fw-medium' }, stage ? `Обработка остановилась на этапе «${stage}»` : 'Обработка остановилась'),
           p.error_message ? h('div', { class: 'small mt-1' }, p.error_message) : null,
           h('div', { class: 'small mt-1' }, 'То, что успело обработаться, остаётся доступным.'));
-        if (p.can_retry) {
+        const summaryOnlyFailure = p.failed_stage === 'summarizing' && d.availability?.search && d.availability?.transcript;
+        if (summaryOnlyFailure && p.can_regenerate_summary) {
+          box.append(h('button', {class:'btn btn-sm btn-outline-danger mt-2', type:'button', onClick: () => regenerate.click()}, 'Повторить создание конспекта'));
+        }
+        if (p.can_retry && !summaryOnlyFailure) {
           const btn = h('button', { class: 'btn btn-sm btn-outline-danger mt-2', type: 'button', onClick: () => retry(btn) }, 'Повторить обработку');
           box.append(btn);
         }

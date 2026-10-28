@@ -338,3 +338,18 @@ docker compose up -d
 
 Миграции 002/003 добавляют предметы и время успешной генерации; конфигурацию
 вручную менять не нужно. Обновите страницу браузера с Ctrl+F5.
+
+Если возникла ошибка «В JSON-ответе LLM нет текста конспекта или списка глав»,
+обновите `dev`, пересоберите Python-образ и пересоздайте сервисы:
+
+```text
+git switch dev
+git pull --ff-only origin dev
+docker compose build search
+docker compose up -d search worker
+docker compose run --rm --no-deps worker python -m app.check_llm
+```
+
+Локальный Qwen теперь получает строгую JSON-схему автоматически, без ручной
+правки `.env`. После `LLM smoke OK` нажмите **«Повторить создание конспекта»**:
+видео и транскрипт обрабатываться заново не будут.
