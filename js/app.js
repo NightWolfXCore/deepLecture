@@ -349,7 +349,7 @@
         h('button', { class: 'btn btn-outline-secondary btn-sm', type: 'button', disabled: S.page <= 1, onClick: () => { S.page--; load(false); } }, 'Назад'),
         h('span', { class: 'small text-body-secondary' }, `Страница ${S.page} из ${pages}`),
         h('button', { class: 'btn btn-outline-secondary btn-sm', type: 'button', disabled: S.page >= pages, onClick: () => { S.page++; load(false); } }, 'Вперёд')) : null;
-      listBox.replaceChildren(list, pager);
+      listBox.replaceChildren(...[list, pager].filter(Boolean));
     }
 
     function schedule(again) {
@@ -544,14 +544,16 @@
         return;
       }
       const idx = Math.max(0, STAGES.indexOf(d.status));
-      const pct = Math.round(((idx + 1) / STAGES.length) * 100);
+      const pct = Math.round(((idx + 1) / (STAGES.length - 1)) * 100);
+      const downloading = d.status === 'extracting' && !d.media_url;
+      const label = downloading ? 'Скачивание видео' : (STATUS[d.status] || STATUS.queued).label;
       bannerBox.append(h('div', { class: 'panel p-3' },
         h('div', { class: 'd-flex justify-content-between mb-2' },
-          h('span', { class: 'fw-medium' }, (STATUS[d.status] || STATUS.queued).label + '…'),
-          h('span', { class: 'small text-body-secondary tnum' }, pct + '%')),
-        h('div', { class: 'progress', role: 'progressbar', 'aria-valuenow': pct, 'aria-valuemin': 0, 'aria-valuemax': 100 },
+          h('span', { class: 'fw-medium' }, label + '…'),
+          h('span', { class: 'small text-body-secondary tnum' }, `Этап ${idx + 1} из ${STAGES.length - 1}`)),
+        h('div', { class: 'progress', role: 'progressbar', 'aria-valuenow': idx + 1, 'aria-valuemin': 1, 'aria-valuemax': STAGES.length - 1, 'aria-valuetext': label },
           h('div', { class: 'progress-bar progress-bar-striped progress-bar-animated', style: `width:${pct}%` })),
-        h('div', { class: 'small text-body-secondary mt-2' }, 'Транскрипт, поиск и конспект появятся по мере готовности. Страницу можно не обновлять.')));
+        h('div', { class: 'small text-body-secondary mt-2' }, downloading ? 'Сервер скачивает видео. Время зависит от размера и доступности YouTube/Vimeo; это не процент загрузки. Статус обновляется автоматически.' : 'Этапы могут занимать разное время. Транскрипт, поиск и конспект появятся по мере готовности.')));
     }
 
     function setSearchEnabled(on, d) {
