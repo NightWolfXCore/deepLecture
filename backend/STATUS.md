@@ -52,7 +52,7 @@
 - Исторический main до интеграции: `ba192ae`. Публикация объединённой версии разрешена пользователем.
 
 Исполняемые результаты проверки на миграциях и точные команды фиксируются
-в [tests/backend/VALIDATION.md](../tests/backend/VALIDATION.md). Прочтение SQL
+в [tests/backend/VALIDATION.md в dev](https://github.com/NightWolfXCore/deepLecture/blob/dev/tests/backend/VALIDATION.md). Прочтение SQL
 само по себе не является подтверждением совместимости работающей БД.
 
 ## Модели и границы доказательств

@@ -15,7 +15,7 @@ LLM-настройки нужны и search, и worker: при смене мод
 Если storage volume создан старой версией, подготовьте каталоги перед запуском
 
 ```sh
-docker compose --env-file .env -f infra/compose.yml run --rm --no-deps --user root php sh -c 'mkdir -p /data/imports /data/downloads; chown 33:33 /data/videos /data/imports; chown 1000:1000 /data/downloads; chmod 2775 /data/videos; chmod 755 /data/imports /data/downloads'
+docker compose run --rm --no-deps --user root php sh -c 'mkdir -p /data/imports /data/downloads; chown 33:33 /data/videos /data/imports; chown 1000:1000 /data/downloads; chmod 2775 /data/videos; chmod 755 /data/imports /data/downloads'
 ```
 
 В новом volume каталоги и группа worker создаются образами автоматически.
@@ -97,7 +97,7 @@ summarizing, но готовые
 
 ## Тесты
 
-Тестовый набор и инструкции доступны в [ветке backend](https://github.com/NightWolfXCore/deepLecture/tree/backend/tests/backend).
+Тестовый набор и инструкции доступны в [ветке backend](https://github.com/NightWolfXCore/deepLecture/tree/dev/tests/backend).
 В dev они сохраняются отдельно от runtime-изменений; в main тестов нет.
 Их подмены моделей подтверждают протоколы и обработку данных, а не качество ML.
 
