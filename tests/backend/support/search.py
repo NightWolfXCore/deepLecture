@@ -21,4 +21,10 @@ class FixtureEmbedder:
         return vector
 
 
-app = create_app(settings=Settings.from_env(), embedder=FixtureEmbedder())
+class FixtureAnswerer:
+    def answer(self, question, history, chunks):
+        return {'answer': chunks[0]['text'], 'sources': [{key: c[key] for key in
+            ('chunk_id', 'text', 'start_ms', 'end_ms')} for c in chunks]}
+
+
+app = create_app(settings=Settings.from_env(), embedder=FixtureEmbedder(), answerer=FixtureAnswerer())

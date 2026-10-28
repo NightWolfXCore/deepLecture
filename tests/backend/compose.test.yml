@@ -1,6 +1,8 @@
 # Test-only override. Base file is infra/compose.yml; paths resolve from infra/.
 services:
   php:
+    volumes:
+      - ../backend/php:/app/backend/php:ro
     environment:
       MAX_UPLOAD_BYTES: "1048576"
   mysql:
@@ -9,6 +11,9 @@ services:
     ports:
       - "127.0.0.1:${TEST_DB_PORT:-13306}:3306"
   search:
+    volumes:
+      - ../backend/python:/repo/backend/python:ro
+      - ../tests/backend/support:/repo/tests/backend/support:ro
     build:
       context: ..
       dockerfile: tests/backend/support/Dockerfile

@@ -239,7 +239,8 @@ def test_index_publication_and_summary_failure_preserves_search(mysql_job):
 
 @pytest.mark.mysql
 @pytest.mark.parametrize("llm_fails", [False, True])
-def test_worker_with_real_ffmpeg_and_mysql(mysql_job, tmp_path, llm_fails):
+@pytest.mark.parametrize("import_source", [False, True])
+def test_worker_with_real_ffmpeg_and_mysql(mysql_job, tmp_path, llm_fails, import_source):
     """Real media tools + queue + DB, external ML/LLM doubles (not quality evaluation)."""
     from dataclasses import replace
     import shutil
@@ -259,6 +260,21 @@ def test_worker_with_real_ffmpeg_and_mysql(mysql_job, tmp_path, llm_fails):
         check=True, timeout=30,
     )
     segment_id = str(uuid4())
+    importer = None
+    if import_source:
+        import json
+        from app.pipeline.import_video import VideoImporter
+        original = tmp_path / 'download-source.mp4'
+        video.replace(original)
+        (tmp_path / 'imports').mkdir()
+        (tmp_path / 'imports' / f'{lecture_id}.json').write_text(json.dumps({'url':'https://vimeo.com/1234567'}))
+        importer = VideoImporter(settings)
+        def local_download(url, job):
+            target = importer.directory(job) / 'video.mp4'
+            target.parent.mkdir(parents=True)
+            shutil.copyfile(original, target)
+            return target
+        importer.download = local_download
     segment = {"id": segment_id, "position": 0, "start_ms": 0, "end_ms": 900,
                "text": "Теорема Пифагора связывает стороны прямоугольного треугольника."}
     orchestrator = make_worker(tmp_path)
@@ -273,7 +289,7 @@ def test_worker_with_real_ffmpeg_and_mysql(mysql_job, tmp_path, llm_fails):
     worker = Worker(settings, repository=repository, audio=AudioProcessor(settings),
                     transcriber=SimpleNamespace(transcribe=lambda *_: [segment]),
                     embedder=orchestrator.embedder,
-                    summarizer=SimpleNamespace(summarize=summary))
+                    summarizer=SimpleNamespace(summarize=summary), importer=importer)
     assert worker.run_once() is True
     record = fetch_job(repository, job_id)
     assert record["status"] == ("failed" if llm_fails else "succeeded")
@@ -283,6 +299,8 @@ def test_worker_with_real_ffmpeg_and_mysql(mysql_job, tmp_path, llm_fails):
         lecture = cursor.fetchone()
         assert lecture["status"] == ("failed" if llm_fails else "ready")
         assert 900 <= lecture["duration_ms"] <= 1200
+        if import_source:
+            assert video.is_file() and lecture['size_bytes'] == video.stat().st_size
         assert lecture["transcript_ready_at"] is not None
         assert lecture["index_ready_at"] is not None
         assert (lecture["summary_ready_at"] is None) == llm_fails
@@ -293,3 +311,18 @@ def test_worker_with_real_ffmpeg_and_mysql(mysql_job, tmp_path, llm_fails):
         cursor.execute("SELECT COUNT(*) AS n FROM lecture_chapters WHERE lecture_id=%s", (lecture_id,))
         assert cursor.fetchone()["n"] == (0 if llm_fails else 1)
     assert list((tmp_path / "audio").iterdir()) == []
+
+
+@pytest.mark.mysql
+def test_import_publication_is_fenced(mysql_job, tmp_path):
+    repository, lecture_id, job_id = mysql_job
+    old = repository.claim()
+    staged, destination = tmp_path/'download.mp4', tmp_path/'public.mp4'
+    staged.write_bytes(b'validated-import')
+    expire(repository, job_id)
+    current = repository.claim()
+    with pytest.raises(LeaseLost):
+        repository.import_ready(old, staged, destination)
+    assert staged.exists() and not destination.exists()
+    repository.import_ready(current, staged, destination)
+    assert destination.read_bytes() == b'validated-import'

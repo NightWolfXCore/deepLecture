@@ -25,8 +25,11 @@ assert.ok(Number.isInteger(catalog.meta.total));
 assert.equal(catalog.meta.page, 1);
 const missing = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
 for (const call of [() => api.getLecture(missing), () => api.getTranscript(missing),
-                    () => api.getSummary(missing),
+                    () => api.getSummary(missing), () => api.getTerms(missing),
+                    () => api.chat(missing, {question:'Вопрос', history:[]}),
                     () => api.search({lecture_id: missing, query: 'Теорема Пифагора', limit: 5})]) {
   await assert.rejects(call, error => error.status === 404 && error.code === 'LECTURE_NOT_FOUND' && !!error.requestId);
 }
+await assert.rejects(() => api.importLecture('Invalid source', 'http://127.0.0.1/private'),
+  error => error.status === 422 && error.code === 'VALIDATION_ERROR');
 console.log('Frontend RealApi → PHP/MySQL smoke OK; browser/video and real ML remain untested.');

@@ -128,7 +128,7 @@ def test_upload_catalog_card_and_range(client, db, videos, ext, mime):
     card = client.get(f"/api/v1/lectures/{lecture}").json()["data"]
     assert card["title"] == "Русская лекция"
     assert card["duration_ms"] is None
-    assert card["availability"] == {"transcript": False, "search": False, "summary": False}
+    assert card["availability"] == {"transcript": False, "search": False, "summary": False, "terms": False}
     assert card["processing"]["can_retry"] is False
     catalog = client.get("/api/v1/lectures").json()
     assert catalog["meta"]["total"] == 1
@@ -167,7 +167,7 @@ def test_ready_transcript_search_summary(client, db):
 def test_failed_summary_keeps_search_available(client, db):
     ids = seed(db, "failed")
     card = client.get(f"/api/v1/lectures/{ids['lecture']}").json()["data"]
-    assert card["availability"] == {"transcript": True, "search": True, "summary": False}
+    assert card["availability"] == {"transcript": True, "search": True, "summary": False, "terms": True}
     assert card["processing"]["failed_stage"] == "summarizing"
     assert card["processing"]["can_retry"] is True
     error(client.get(f"/api/v1/lectures/{ids['lecture']}/summary"), 409, "SUMMARY_FAILED")
@@ -220,6 +220,72 @@ def test_search_validation(client, payload):
 
 def test_malformed_json(client):
     error(client.post("/api/v1/search", content="{broken", headers={"Content-Type": "application/json"}), 400)
+
+
+def test_global_search_spans_ready_lectures_and_empty_collection(client, db):
+    assert client.post('/api/v1/search', json={'query':'вопрос'}).json()['data'] == []
+    first, second = seed(db), seed(db, 'failed')
+    seed(db, 'queued', available=False)
+    result = client.post('/api/v1/search', json={'query':'стороны треугольника','limit':10})
+    assert result.status_code == 200, result.text
+    assert {hit['lecture_id'] for hit in result.json()['data']} == {first['lecture'],second['lecture']}
+    for hit in result.json()['data']:
+        assert hit['lecture_title'] and hit['lecture_id'] in hit['playback_url']
+
+
+@pytest.mark.parametrize('url', ['https://youtu.be/abcdefghijk?t=12','https://vimeo.com/12345678'])
+def test_import_is_queued_and_not_falsely_published(client, db, url):
+    response = client.post('/api/v1/lectures/import', json={'title':'Лекция по ссылке','url':url})
+    assert response.status_code == 202, response.text
+    lecture = response.json()['data']['id']
+    card = client.get(f'/api/v1/lectures/{lecture}').json()['data']
+    assert card['status'] == 'queued' and card['media_url'] is None
+    assert not any(card['availability'].values())
+    with db.cursor() as cur:
+        cur.execute('SELECT size_bytes,storage_key FROM lectures WHERE id=%s',(lecture,))
+        row = cur.fetchone()
+    assert row['size_bytes'] == 0 and row['storage_key'] == f'videos/{lecture}.mp4'
+    assert client.get(f'/media/imports/{lecture}.json').status_code == 404
+
+
+@pytest.mark.parametrize('url', ['file:///etc/passwd','http://127.0.0.1/a',
+    'https://youtube.com.evil.test/watch?v=abcdefghijk','https://u:p@youtube.com/watch?v=abcdefghijk',
+    'https://youtube.com/playlist?list=abc','https://vimeo.com/abc'])
+def test_import_rejects_non_platform_or_non_video_urls(client, url):
+    error(client.post('/api/v1/lectures/import', json={'title':'Тест','url':url}),422,'VALIDATION_ERROR')
+
+
+def test_terms_are_anchored_and_available_after_summary_failure(client, db):
+    ids = seed(db, 'failed')
+    response = client.get(f"/api/v1/lectures/{ids['lecture']}/terms")
+    assert response.status_code == 200, response.text
+    terms = response.json()['data']['terms']
+    assert terms and any('гипотенуз' in term['term'] for term in terms)
+    for term in terms:
+        assert term['definition']
+        assert term['mentions'][0]['segment_id'] == ids['segment']
+        assert term['mentions'][0]['start_ms'] == 12000
+    queued = seed(db, 'queued', available=False)
+    error(client.get(f"/api/v1/lectures/{queued['lecture']}/terms"),409,'TERMS_NOT_READY')
+
+
+def test_chat_returns_sources_from_selected_lecture(client, db):
+    ids = seed(db)
+    other = seed(db)
+    response = client.post(f"/api/v1/lectures/{ids['lecture']}/chat", json={'question':'Как связаны стороны?','history':[]})
+    assert response.status_code == 200, response.text
+    result = response.json()['data']
+    assert result['answer'] and result['lecture_id'] == ids['lecture']
+    assert [src['chunk_id'] for src in result['sources']] == [ids['chunk']]
+    assert result['sources'][0]['start_ms'] == 12000
+    assert other['chunk'] not in str(result)
+
+
+@pytest.mark.parametrize('body', [{'question':' '},{'question':'x','history':[{'role':'system','content':'x'}]},
+    {'question':'x','history':[{'role':'user','content':'x'}]*7}])
+def test_chat_validates_question_and_history(client, db, body):
+    ids = seed(db)
+    error(client.post(f"/api/v1/lectures/{ids['lecture']}/chat",json=body),422,'VALIDATION_ERROR')
 
 @pytest.mark.parametrize("query", ["page=0", "per_page=101", "page=oops", "page[]=1"])
 def test_pagination_validation(client, query):
