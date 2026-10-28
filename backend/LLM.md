@@ -66,6 +66,7 @@ dcl up -d ollama
 dcl exec ollama ollama pull qwen3.5:4b
 dcl exec ollama ollama show qwen3.5:4b
 dcl up -d --build worker
+dcl up -d --build search
 dcl exec worker python -m app.check_llm
 ```
 

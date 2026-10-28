@@ -14,6 +14,7 @@ from app.pipeline.chunk import build_chunks
 from app.pipeline.embed import Embedder
 from app.pipeline.errors import PipelineError
 from app.pipeline.transcribe import Transcriber
+from app.pipeline.import_video import VideoImporter
 from app.providers.llm import Summarizer
 from app.repositories.database import JobRepository, LeaseLost
 
@@ -62,7 +63,7 @@ def video_path(storage_root: Path, key: str) -> Path:
 
 class Worker:
     def __init__(self, settings: Settings, repository=None, audio=None, transcriber=None,
-                 embedder=None, summarizer=None, heartbeat_interval: float | None = None):
+                 embedder=None, summarizer=None, heartbeat_interval: float | None = None, importer=None):
         self.settings = settings
         lease = getattr(settings, "lease_seconds", 120)
         self.repository = repository or JobRepository(settings, lease_seconds=lease)
@@ -73,6 +74,7 @@ class Worker:
         self.transcriber = transcriber or Transcriber(settings)
         self.embedder = embedder or Embedder(settings)
         self.summarizer = summarizer or Summarizer(settings)
+        self.importer = importer or VideoImporter(settings)
 
     def run_once(self) -> bool:
         job = self.repository.claim()
@@ -85,8 +87,16 @@ class Worker:
         try:
             with Heartbeat(self.repository, job, self.heartbeat_interval) as heartbeat:
                 audio_dir.mkdir(parents=True, exist_ok=True)
-                video = video_path(self.settings.storage_root, job["storage_key"])
-                duration = self.audio.extract(video, audio_file)
+                source = self.importer.source(job)
+                if source is not None:
+                    destination = self.settings.storage_root / job['storage_key']
+                    video = destination if destination.is_file() else self.importer.download(source, job)
+                    duration = self.audio.extract(video, audio_file)
+                    heartbeat.check()
+                    self.repository.import_ready(job, video, destination)
+                else:
+                    video = video_path(self.settings.storage_root, job["storage_key"])
+                    duration = self.audio.extract(video, audio_file)
                 heartbeat.check()
                 self.repository.audio_ready(job, duration)
                 stage = "transcribing"
@@ -118,6 +128,7 @@ class Worker:
                 # Leave running job recoverable by its lease rather than inventing success.
                 logger.error("Could not persist failure; lease recovery will retry the job")
         finally:
+            self.importer.cleanup(job)
             try:
                 audio_file.unlink(missing_ok=True)
             except OSError:

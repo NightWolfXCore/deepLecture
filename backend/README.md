@@ -4,6 +4,25 @@ PHP 8.3 API + Python 3.11 FastAPI + отдельный worker + MySQL 8.4 + FFmp
 Реализация следует `contracts/http-api.md` и `contracts/database.md`.
 Фронтенд и production-миграции БД разрабатываются другими участниками.
 
+Реализованы API нового frontend: импорт YouTube/Vimeo, поиск по всем лекциям
+(без lecture_id), термины и чат с источниками. Формат — контракт HTTP v1.1.
+LLM-настройки нужны и search, и worker: при смене модели пересоздавайте оба
+сервиса. Импорт требует новых зависимостей `yt-dlp[default]`, FFmpeg и Deno
+(в Dockerfile — 2.5.6); одного изменения `.env` недостаточно, образ пересобирается.
+При нативном запуске установите Deno в PATH. Приватные видео/cookies/DRM
+не поддерживаются; доступ к платформам и их CDN нужен отдельно.
+
+Если storage volume создан старой версией, подготовьте каталоги перед запуском
+нового worker (данные не удаляются; команда работает и в PowerShell):
+
+```sh
+docker compose --env-file .env -f infra/compose.yml run --rm --no-deps --user root php sh -c 'mkdir -p /data/imports /data/downloads; chown 33:33 /data/videos /data/imports; chown 1000:1000 /data/downloads; chmod 2775 /data/videos; chmod 755 /data/imports /data/downloads'
+```
+
+В новом volume каталоги и группа worker создаются образами автоматически.
+URL хранится в приватном `storage/imports/<UUID>.json`; временные скачивания
+изолированы по worker_token. Вместе с БД сохраняйте volume storage.
+
 ## Быстрый запуск
 
 Из корня репозитория, Docker Engine + Compose v2:

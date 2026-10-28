@@ -21,6 +21,8 @@ class Settings:
     cpu_threads: int = 2
     max_duration_ms: int = 7_200_000
     ffmpeg_timeout: int = 1800
+    import_timeout: int = 1800
+    max_import_bytes: int = 524288000
     llm_base_url: str = "https://api.openai.com/v1"
     llm_api_key: str = ""
     llm_auth_mode: str = "bearer"
@@ -50,6 +52,8 @@ class Settings:
             cpu_threads=max(1, int(value("CPU_THREADS", "2"))),
             max_duration_ms=int(value("MAX_DURATION_MS", "7200000")),
             ffmpeg_timeout=int(value("FFMPEG_TIMEOUT", "1800")),
+            import_timeout=int(value("IMPORT_TIMEOUT", "1800")),
+            max_import_bytes=int(value("MAX_IMPORT_BYTES", "524288000")),
             llm_base_url=value("LLM_BASE_URL", "https://api.openai.com/v1"),
             llm_api_key=value("LLM_API_KEY", ""), llm_model=value("LLM_MODEL", "gpt-4o-mini"),
             llm_auth_mode=value("LLM_AUTH_MODE", "bearer").lower(),

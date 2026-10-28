@@ -30,19 +30,23 @@ final class App
                 default => throw new ApiError(405, 'METHOD_NOT_ALLOWED', 'Метод не поддерживается'),
             };
         }
+        if ($path === '/api/v1/lectures/import') {
+            if ($method !== 'POST') throw new ApiError(405, 'METHOD_NOT_ALLOWED', 'Метод не поддерживается');
+            return [202, ['data' => $this->importVideo(Input::json())]];
+        }
         if ($path === '/api/v1/search') {
             if ($method !== 'POST') {
                 throw new ApiError(405, 'METHOD_NOT_ALLOWED', 'Метод не поддерживается');
             }
             return [200, $this->search(Input::json())];
         }
-        if (preg_match('~^/api/v1/lectures/([0-9a-f-]+)(?:/(transcript|summary|retry))?$~iD', $path, $matches)) {
+        if (preg_match('~^/api/v1/lectures/([0-9a-f-]+)(?:/(transcript|summary|retry|terms|chat))?$~iD', $path, $matches)) {
             $id = strtolower($matches[1]);
             if (!Config::isUuid($id)) {
                 throw new ApiError(404, 'LECTURE_NOT_FOUND', 'Лекция не найдена');
             }
             $action = $matches[2] ?? '';
-            if ($method !== ($action === 'retry' ? 'POST' : 'GET')) {
+            if ($method !== (in_array($action, ['retry', 'chat'], true) ? 'POST' : 'GET')) {
                 throw new ApiError(405, 'METHOD_NOT_ALLOWED', 'Метод не поддерживается');
             }
             return match ($action) {
@@ -50,6 +54,8 @@ final class App
                 'transcript' => [200, ['data' => $this->transcript($id)]],
                 'summary' => [200, ['data' => $this->summary($id)]],
                 'retry' => [202, ['data' => $this->retry($id)]],
+                'terms' => [200, ['data' => $this->terms($id)]],
+                'chat' => [200, $this->chat($id, Input::json())],
             };
         }
         throw new ApiError(404, 'NOT_FOUND', 'Ресурс не найден');
@@ -102,8 +108,8 @@ final class App
             return [
                 'id' => $row['id'], 'title' => $row['title'], 'status' => $row['status'],
                 'duration_ms' => $row['duration_ms'] === null ? null : (int) $row['duration_ms'],
-                'media_url' => '/media/' . $key,
-                'availability' => ['transcript' => $row['transcript_ready_at'] !== null, 'search' => $row['index_ready_at'] !== null, 'summary' => $row['summary_ready_at'] !== null],
+                'media_url' => (int) $row['size_bytes'] > 0 ? '/media/' . $key : null,
+                'availability' => ['transcript' => $row['transcript_ready_at'] !== null, 'search' => $row['index_ready_at'] !== null, 'summary' => $row['summary_ready_at'] !== null, 'terms' => $row['transcript_ready_at'] !== null],
                 'processing' => [
                     'job_id' => $job['id'] ?? null,
                     'failed_stage' => $job['failed_stage'] ?? null,
@@ -183,6 +189,54 @@ final class App
         return ['id' => $id, 'title' => $title, 'status' => 'queued', 'job_id' => $jobId];
     }
 
+    private function importVideo(array $body): array
+    {
+        $title = Input::string($body['title'] ?? null, 'title', 200);
+        $url = VideoSource::canonical(Input::string($body['url'] ?? null, 'url', 2000));
+        $id = Config::uuid();
+        $jobId = Config::uuid();
+        $dir = Config::storage() . '/imports';
+        if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) throw new ApiError(503, 'STORAGE_UNAVAILABLE', 'Хранилище недоступно');
+        $manifest = $dir . '/' . $id . '.json';
+        if (file_put_contents($manifest, json_encode(['url' => $url], JSON_THROW_ON_ERROR), LOCK_EX) === false) throw new ApiError(503, 'STORAGE_UNAVAILABLE', 'Хранилище недоступно');
+        chmod($manifest, 0644);
+        try {
+            $this->db->transaction(function () use ($id, $jobId, $title): void {
+                $this->db->query("INSERT INTO lectures (id,title,original_filename,storage_key,mime_type,size_bytes,status,created_at,updated_at) VALUES (?,?,?,?,'video/mp4',0,'queued',UTC_TIMESTAMP(3),UTC_TIMESTAMP(3))", [$id, $title, $id . '.mp4', 'videos/' . $id . '.mp4']);
+                $this->insertJob($id, $jobId);
+            });
+        } catch (\Throwable $e) {
+            unlink($manifest);
+            throw $e;
+        }
+        return ['id' => $id, 'title' => $title, 'status' => 'queued', 'job_id' => $jobId];
+    }
+
+    private function terms(string $id): array
+    {
+        try {
+            $transcript = $this->transcript($id);
+        } catch (ApiError $e) {
+            if ($e->errorCode === 'TRANSCRIPT_NOT_READY') throw new ApiError(409, 'TERMS_NOT_READY', 'Транскрипт для терминов ещё не готов');
+            throw $e;
+        }
+        return ['lecture_id' => $id, 'terms' => Terms::extract($transcript['segments'])];
+    }
+
+    private function chat(string $id, array $body): array
+    {
+        $question = Input::string($body['question'] ?? null, 'question', 1000);
+        $history = $body['history'] ?? [];
+        if (!is_array($history) || !array_is_list($history) || count($history) > 6) throw Input::invalid('history', 'Допускается до шести сообщений');
+        foreach ($history as $message) {
+            if (!is_array($message) || !in_array($message['role'] ?? null, ['user', 'assistant'], true)) throw Input::invalid('history', 'Некорректная история');
+            Input::string($message['content'] ?? null, 'history', 4000);
+        }
+        if ($this->lecture($id)['index_ready_at'] === null) throw new ApiError(409, 'LECTURE_NOT_READY', 'Индекс лекции ещё не готов');
+        set_time_limit(290);
+        return $this->python->request('/internal/v1/chat', ['lecture_id' => $id, 'question' => $question, 'history' => $history], 280000);
+    }
+
     private function insertJob(string $lectureId, string $jobId): void
     {
         $this->db->query("INSERT INTO processing_jobs (id,lecture_id,status,stage,attempt,created_at,updated_at) VALUES (?,?,'queued','queued',0,UTC_TIMESTAMP(3),UTC_TIMESTAMP(3))", [$jobId, $lectureId]);
@@ -255,16 +309,18 @@ final class App
 
     private function search(array $body): array
     {
-        if (!Config::isUuid($body['lecture_id'] ?? null)) {
+        if (array_key_exists('lecture_id', $body) && !Config::isUuid($body['lecture_id'])) {
             throw Input::invalid('lecture_id', 'Ожидается UUID лекции');
         }
-        $id = strtolower($body['lecture_id']);
+        $id = isset($body['lecture_id']) ? strtolower($body['lecture_id']) : null;
         $query = Input::string($body['query'] ?? null, 'query', 1000);
         $limit = Input::integer($body['limit'] ?? 5, 'limit', 1, 20);
-        if ($this->lecture($id)['index_ready_at'] === null) {
+        if ($id !== null && $this->lecture($id)['index_ready_at'] === null) {
             throw new ApiError(409, 'LECTURE_NOT_READY', 'Индекс лекции ещё не готов');
         }
-        $answer = $this->python->request('/internal/v1/search', ['lecture_id' => $id, 'query' => $query, 'limit' => $limit]);
+        $payload = ['query' => $query, 'limit' => $limit];
+        if ($id !== null) $payload['lecture_id'] = $id;
+        $answer = $this->python->request('/internal/v1/search', $payload);
         $hits = $answer['data'];
         if (!is_array($hits) || !array_is_list($hits) || count($hits) > $limit) {
             throw new ApiError(502, 'SEARCH_INVALID_RESPONSE', 'Некорректный ответ сервиса поиска');
@@ -277,15 +333,16 @@ final class App
             $seen[$hit['chunk_id']] = true;
         }
         return $this->db->transaction(function () use ($id, $query, $hits): array {
-            $lecture = $this->lecture($id);
-            if ($lecture['index_ready_at'] === null) {
+            $lecture = $id !== null ? $this->lecture($id) : null;
+            if ($lecture !== null && $lecture['index_ready_at'] === null) {
                 throw new ApiError(409, 'LECTURE_NOT_READY', 'Индекс лекции ещё не готов');
             }
             $chunks = [];
             if ($hits !== []) {
                 $ids = array_column($hits, 'chunk_id');
                 $placeholders = implode(',', array_fill(0, count($ids), '?'));
-                foreach ($this->db->query("SELECT id,text,start_ms,end_ms FROM search_chunks WHERE lecture_id=? AND id IN ({$placeholders})", [$id, ...$ids])->fetchAll() as $row) {
+                $where = $id !== null ? ' AND c.lecture_id=?' : '';
+                foreach ($this->db->query("SELECT c.id,c.lecture_id,c.text,c.start_ms,c.end_ms,l.title FROM search_chunks c JOIN lectures l ON l.id=c.lecture_id WHERE l.index_ready_at IS NOT NULL AND c.id IN ({$placeholders})" . $where, $id !== null ? [...$ids, $id] : $ids)->fetchAll() as $row) {
                     $chunks[$row['id']] = $row;
                 }
                 if (count($chunks) !== count($hits)) {
@@ -297,10 +354,10 @@ final class App
                 $row = $chunks[$hit['chunk_id']];
                 $start = (int) $row['start_ms'];
                 $results[] = [
-                    'chunk_id' => $row['id'], 'lecture_id' => $id, 'lecture_title' => $lecture['title'],
+                    'chunk_id' => $row['id'], 'lecture_id' => $row['lecture_id'], 'lecture_title' => $row['title'],
                     'text' => $row['text'], 'start_ms' => $start, 'end_ms' => (int) $row['end_ms'],
                     'score' => max(-1.0, min(1.0, (float) $hit['score'])),
-                    'playback_url' => '/?lecture=' . $id . '&t=' . rtrim(rtrim(number_format($start / 1000, 3, '.', ''), '0'), '.'),
+                    'playback_url' => '/?lecture=' . $row['lecture_id'] . '&t=' . rtrim(rtrim(number_format($start / 1000, 3, '.', ''), '0'), '.'),
                 ];
             }
             // Sort defensively instead of trusting upstream ordering.

@@ -31,6 +31,13 @@ ID — UUID `CHAR(36)` с ASCII binary collation, генерируются пр�
 | created_at, updated_at | DATETIME(3) |
 
 Availability API: соответствующее `*_ready_at IS NOT NULL`.
+Для импорта, пока скачивание не завершено, `size_bytes=0`, а API скрывает
+media_url. Имя и storage_key заранее генерируются по UUID, как у MP4-загрузки.
+Канонический URL хранится в приватном `storage/imports/<lecture_id>.json`;
+очередь по-прежнему находится в MySQL. Это MVP-хранилище источника без изменения
+миграций участника БД; его следует сохранять вместе с volume storage.
+После ffprobe worker публикует файл и size_bytes только под актуальным lease.
+Термины вычисляются из сегментов, чат не сохраняется; новых таблиц не требуется.
 `duration_ms`, если задана, должна быть > 0.
 Индекс `(created_at, id)` для каталога.
 

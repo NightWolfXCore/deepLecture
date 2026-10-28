@@ -63,6 +63,13 @@ services:
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-intfloat/multilingual-e5-small}
       EMBEDDING_REVISION: ${EMBEDDING_REVISION:-}
       CPU_THREADS: ${CPU_THREADS:-2}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com/v1}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_AUTH_MODE: ${LLM_AUTH_MODE:-bearer}
+      LLM_REASONING_EFFORT: ${LLM_REASONING_EFFORT:-}
+      LLM_ALLOW_HTTP: ${LLM_ALLOW_HTTP:-false}
+      LLM_TIMEOUT: ${LLM_TIMEOUT:-90}
     volumes:
       - models:/models
     command: [uvicorn, app.api:app, --host, 0.0.0.0, --port, "8000"]
@@ -71,6 +78,7 @@ services:
         condition: service_healthy
 
   worker:
+    group_add: ["33"]
     build:
       context: ..
       dockerfile: backend/python/Dockerfile
@@ -82,6 +90,8 @@ services:
       EMBEDDING_REVISION: ${EMBEDDING_REVISION:-}
       WHISPER_MODEL: ${WHISPER_MODEL:-small}
       WHISPER_REVISION: ${WHISPER_REVISION:-}
+      MAX_IMPORT_BYTES: ${MAX_IMPORT_BYTES:-524288000}
+      IMPORT_TIMEOUT: ${IMPORT_TIMEOUT:-1800}
       CPU_THREADS: ${CPU_THREADS:-2}
       LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com/v1}
       LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}

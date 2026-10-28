@@ -21,7 +21,7 @@ class Summarizer:
         self.client = client
         self.sleep = sleep
 
-    def _request(self, content):
+    def _completion(self, content, system=SYSTEM, max_tokens=3000):
         cfg = self.settings
         address = urlsplit(cfg.llm_base_url)
         if (address.scheme != "https" and not (cfg.llm_allow_http and address.scheme == "http")) or not address.hostname:
@@ -32,9 +32,9 @@ class Summarizer:
             raise PipelineError("LLM_NOT_CONFIGURED", "Не настроена авторизация LLM API")
         headers = {"Authorization": "Bearer " + cfg.llm_api_key} if cfg.llm_auth_mode == "bearer" else {}
         payload = {"model": cfg.llm_model, "messages": [
-            {"role": "system", "content": SYSTEM},
+            {"role": "system", "content": system},
             {"role": "user", "content": json.dumps(content, ensure_ascii=False)}],
-            "response_format": {"type": "json_object"}, "temperature": 0.1, "max_tokens": 3000}
+            "response_format": {"type": "json_object"}, "temperature": 0.1, "max_tokens": max_tokens}
         if cfg.llm_reasoning_effort:
             payload["reasoning_effort"] = cfg.llm_reasoning_effort
         own_client = self.client is None
@@ -50,10 +50,8 @@ class Summarizer:
                             continue
                     response.raise_for_status()
                     result = json.loads(response.json()["choices"][0]["message"]["content"])
-                    if not isinstance(result, dict) or not isinstance(result.get("text"), str) or not result["text"].strip():
-                        raise ValueError("Invalid summary")
-                    if not isinstance(result.get("chapters"), list) or len(result["chapters"]) > 200:
-                        raise ValueError("Invalid chapters")
+                    if not isinstance(result, dict):
+                        raise ValueError("Invalid JSON object")
                     return result
                 except (httpx.TimeoutException, httpx.NetworkError):
                     if attempt == 2:
@@ -65,6 +63,13 @@ class Summarizer:
         finally:
             if own_client:
                 client.close()
+
+    def _request(self, content):
+        result = self._completion(content)
+        if (not isinstance(result.get('text'), str) or not result['text'].strip()
+                or not isinstance(result.get('chapters'), list) or len(result['chapters']) > 200):
+            raise PipelineError('SUMMARY_FAILED', 'Не удалось получить корректный конспект от LLM')
+        return result
 
     @staticmethod
     def _batches(segments, limit=12000):

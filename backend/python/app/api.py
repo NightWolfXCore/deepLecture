@@ -12,6 +12,7 @@ from app.config import Settings
 from app.pipeline.embed import Embedder
 from app.pipeline.errors import PipelineError
 from app.repositories.database import SearchRepository
+from app.providers.chat import Answerer
 
 log = logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ class ApiError(Exception):
 
 class SearchInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    lecture_id: UUID
+    lecture_id: UUID | None = None
     query: str = Field(min_length=1, max_length=1000, strict=True)
     limit: StrictInt = Field(default=5, ge=1, le=20)
 
@@ -33,10 +34,29 @@ class SearchInput(BaseModel):
         return value.strip() if isinstance(value, str) else value
 
 
-def create_app(settings=None, repository=None, embedder=None):
+class HistoryMessage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    role: str = Field(pattern="^(user|assistant)$")
+    content: str = Field(min_length=1, max_length=4000, strict=True)
+
+
+class ChatInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    lecture_id: UUID
+    question: str = Field(min_length=1, max_length=1000, strict=True)
+    history: list[HistoryMessage] = Field(default_factory=list, max_length=6)
+
+    @field_validator('question', mode='before')
+    @classmethod
+    def trim_question(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
+
+def create_app(settings=None, repository=None, embedder=None, answerer=None):
     cfg = settings or Settings.from_env()
     repo = repository or SearchRepository(cfg)
     encoder = embedder or Embedder(cfg)
+    chat_model = answerer or Answerer(cfg)
 
     @asynccontextmanager
     async def lifespan(app):
@@ -95,16 +115,17 @@ def create_app(settings=None, repository=None, embedder=None):
         repo.ping()
         return {"data": {"status": "ok"}}
 
-    @app.post("/internal/v1/search")
-    def search(payload: SearchInput):
+    def retrieve(lecture_id, query_text, limit):
         if not app.state.model_ready:
             raise ApiError("SEARCH_UNAVAILABLE", 503, "Модель поиска не загружена")
-        lecture, rows = repo.index(str(payload.lecture_id))
+        lecture, rows = repo.index(lecture_id)
         if lecture is None:
             raise ApiError("LECTURE_NOT_FOUND", 404, "Лекция не найдена")
         if lecture["index_ready_at"] is None:
             raise ApiError("LECTURE_NOT_READY", 409, "Индекс лекции ещё не готов")
         if not rows:
+            if lecture_id is None:
+                return []
             raise ApiError("INDEX_INVALID", 503, "Индекс лекции повреждён или несовместим")
         vectors = []
         for row in rows:
@@ -116,12 +137,31 @@ def create_app(settings=None, repository=None, embedder=None):
             if not np.isfinite(vector).all() or not np.isclose(np.linalg.norm(vector), 1, atol=1e-4):
                 raise ApiError("INDEX_INVALID", 503, "Индекс лекции повреждён или несовместим")
             vectors.append(vector)
-        query = np.asarray(encoder.encode_query(payload.query), dtype=np.float32)
+        query = np.asarray(encoder.encode_query(query_text), dtype=np.float32)
         if query.shape != (384,) or not np.isfinite(query).all() or not np.isclose(np.linalg.norm(query), 1, atol=1e-4):
             raise PipelineError("EMBEDDING_FAILED", "Некорректный вектор запроса")
         scores = np.clip(np.stack(vectors) @ query, -1, 1)
         ranked = sorted(range(len(rows)), key=lambda i: (-float(scores[i]), rows[i]["start_ms"], rows[i]["chunk_id"]))
-        return {"data": [{"chunk_id": rows[i]["chunk_id"], "score": float(scores[i])} for i in ranked[:payload.limit]]}
+        return [{**rows[i], "score": float(scores[i])} for i in ranked[:limit]]
+
+    @app.post("/internal/v1/search")
+    def search(payload: SearchInput):
+        rows = retrieve(str(payload.lecture_id) if payload.lecture_id else None, payload.query, payload.limit)
+        return {"data": [{"chunk_id": row['chunk_id'], "score": row['score']} for row in rows]}
+
+    @app.post('/internal/v1/chat')
+    def chat(payload: ChatInput):
+        lecture_id = str(payload.lecture_id)
+        rows = retrieve(lecture_id, payload.question, 4)
+        try:
+            result = chat_model.answer(payload.question, [m.model_dump() for m in payload.history], rows)
+        except PipelineError:
+            raise ApiError('CHAT_UNAVAILABLE', 503, 'Не удалось получить ответ по лекции') from None
+        lecture, current = repo.index(lecture_id)
+        if (not lecture or lecture['index_ready_at'] is None
+                or not {r['chunk_id'] for r in rows}.issubset({r['chunk_id'] for r in current})):
+            raise ApiError('LECTURE_NOT_READY', 409, 'Индекс лекции обновился, повторите вопрос')
+        return {'data': {'lecture_id': lecture_id, **result}}
 
     return app
 

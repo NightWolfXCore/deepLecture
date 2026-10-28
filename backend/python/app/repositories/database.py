@@ -65,20 +65,25 @@ class SearchRepository(Database):
 
     health = ping
 
-    def index(self, lecture_id: str) -> tuple[dict | None, list[dict]]:
+    def index(self, lecture_id: str | None) -> tuple[dict | None, list[dict]]:
         # Explicit consistent snapshot also works if server default isolation differs.
         with self.connection() as connection, connection.cursor() as cursor:
             cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
             cursor.execute("START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY")
-            cursor.execute("SELECT id, index_ready_at FROM lectures WHERE id=%s", (lecture_id,))
-            lecture = cursor.fetchone()
+            if lecture_id is not None:
+                cursor.execute("SELECT id, index_ready_at FROM lectures WHERE id=%s", (lecture_id,))
+                lecture = cursor.fetchone()
+            else:
+                lecture = {"index_ready_at": True}
             if not lecture or lecture["index_ready_at"] is None:
                 return lecture, []
             cursor.execute(
-                "SELECT c.id AS chunk_id, c.start_ms, e.embedding, e.model_name, "
+                "SELECT c.id AS chunk_id, c.lecture_id, c.text, c.start_ms, c.end_ms, e.embedding, e.model_name, "
                 "e.model_revision, e.dimensions FROM search_chunks c "
+                "JOIN lectures l ON l.id=c.lecture_id "
                 "LEFT JOIN chunk_embeddings e ON e.chunk_id=c.id "
-                "WHERE c.lecture_id=%s ORDER BY c.position", (lecture_id,),
+                "WHERE l.index_ready_at IS NOT NULL " + ("AND c.lecture_id=%s " if lecture_id is not None else "") +
+                "ORDER BY c.lecture_id,c.position", (lecture_id,) if lecture_id is not None else (),
             )
             return lecture, list(cursor.fetchall())
 
@@ -199,6 +204,21 @@ class JobRepository(Database):
             self._lock(cursor, job)
             cursor.execute("UPDATE lectures SET duration_ms=%s WHERE id=%s", (duration_ms, job["lecture_id"]))
             self._stage(cursor, job, "transcribing")
+        self.write(action)
+
+    def import_ready(self, job: dict, staged_path, destination):
+        """Publish one token-scoped download while holding the lease fencing lock."""
+        size = staged_path.stat().st_size
+        if size <= 0:
+            raise ValueError("Empty import")
+        def action(cursor):
+            self._lock(cursor, job)
+            # Rename is local/atomic, not a network/ML operation in a transaction.
+            # A retried SQL deadlock may follow a successful rename.
+            if staged_path.exists():
+                staged_path.replace(destination)
+                destination.chmod(0o644)
+            cursor.execute("UPDATE lectures SET size_bytes=%s,mime_type='video/mp4',updated_at=UTC_TIMESTAMP(3) WHERE id=%s", (size, job['lecture_id']))
         self.write(action)
 
     def transcript_ready(self, job: dict, segments: list[dict]):
