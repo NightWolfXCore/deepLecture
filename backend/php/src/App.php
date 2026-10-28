@@ -8,7 +8,7 @@ final class App
 {
     public function __construct(private readonly Database $db = new Database(), private readonly PythonClient $python = new PythonClient()) {}
 
-    /** @return array{int,array} */
+    /** @return array{int,array|Download} */
     public function dispatch(string $method, string $path): array
     {
         if ($path === '/api/v1/health' && $method === 'GET') {
@@ -41,19 +41,35 @@ final class App
             }
             return [200, $this->search(Input::json())];
         }
-        if (preg_match('~^/api/v1/lectures/([0-9a-f-]+)(?:/(transcript|summary|retry|terms|chat))?$~iD', $path, $matches)) {
+        if (preg_match('~^/api/v1/lectures/([0-9a-f-]+)/summary\.docx$~iD', $path, $match)) {
+            if ($method !== 'GET') throw new ApiError(405, 'METHOD_NOT_ALLOWED', 'Метод не поддерживается');
+            $id = strtolower($match[1]);
+            if (!Config::isUuid($id)) throw new ApiError(404, 'LECTURE_NOT_FOUND', 'Лекция не найдена');
+            $summary = $this->summary($id);
+            $lecture = $this->lecture($id);
+            return [200, new Download(SummaryDocx::create($lecture['title'], $summary), 'deepLecture-' . $id . '.docx')];
+        }
+        if (preg_match('~^/api/v1/lectures/([0-9a-f-]+)(?:/(transcript|summary|summary/regenerate|retry|terms|chat))?$~iD', $path, $matches)) {
             $id = strtolower($matches[1]);
             if (!Config::isUuid($id)) {
                 throw new ApiError(404, 'LECTURE_NOT_FOUND', 'Лекция не найдена');
             }
             $action = $matches[2] ?? '';
-            if ($method !== (in_array($action, ['retry', 'chat'], true) ? 'POST' : 'GET')) {
+            if ($action === '' && $method === 'PATCH') {
+                $body = Input::json();
+                $category = Categories::validate($body['category'] ?? null);
+                $this->lecture($id);
+                $this->db->query('UPDATE lectures SET category=?,updated_at=UTC_TIMESTAMP(3) WHERE id=?', [$category, $id]);
+                return [200, ['data' => ['id' => $id, 'category' => $category]]];
+            }
+            if ($method !== (in_array($action, ['retry', 'chat', 'summary/regenerate'], true) ? 'POST' : 'GET')) {
                 throw new ApiError(405, 'METHOD_NOT_ALLOWED', 'Метод не поддерживается');
             }
             return match ($action) {
                 '' => [200, ['data' => $this->card($id)]],
                 'transcript' => [200, ['data' => $this->transcript($id)]],
                 'summary' => [200, ['data' => $this->summary($id)]],
+                'summary/regenerate' => [202, ['data' => $this->regenerateSummary($id)]],
                 'retry' => [202, ['data' => $this->retry($id)]],
                 'terms' => [200, ['data' => $this->terms($id)]],
                 'chat' => [200, $this->chat($id, Input::json())],
@@ -79,12 +95,17 @@ final class App
     private function catalog(): array
     {
         $page = Input::integer($_GET['page'] ?? 1, 'page', 1, 1000000, true);
+        $category = isset($_GET['category']) && $_GET['category'] !== '' ? Categories::validate($_GET['category']) : null;
         $perPage = Input::integer($_GET['per_page'] ?? 20, 'per_page', 1, 100, true);
-        return $this->db->transaction(function () use ($page, $perPage): array {
-            $total = (int) $this->db->query('SELECT COUNT(*) FROM lectures')->fetchColumn();
-            $query = $this->db->pdo()->prepare('SELECT id, title, status, duration_ms, created_at FROM lectures ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?');
-            $query->bindValue(1, $perPage, PDO::PARAM_INT);
-            $query->bindValue(2, ($page - 1) * $perPage, PDO::PARAM_INT);
+        return $this->db->transaction(function () use ($page, $perPage, $category): array {
+            $where = $category === null ? '' : ' WHERE category=?';
+            $params = $category === null ? [] : [$category];
+            $total = (int) $this->db->query('SELECT COUNT(*) FROM lectures' . $where, $params)->fetchColumn();
+            $query = $this->db->pdo()->prepare('SELECT id, title, category, status, duration_ms, created_at FROM lectures' . $where . ' ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?');
+            if ($category !== null) $query->bindValue(1, $category);
+            $offset = $category === null ? 0 : 1;
+            $query->bindValue($offset + 1, $perPage, PDO::PARAM_INT);
+            $query->bindValue($offset + 2, ($page - 1) * $perPage, PDO::PARAM_INT);
             $query->execute();
             $rows = $query->fetchAll();
             foreach ($rows as &$row) {
@@ -103,16 +124,20 @@ final class App
             $active = (bool) $this->db->query("SELECT 1 FROM processing_jobs WHERE lecture_id = ? AND status IN ('queued', 'running') LIMIT 1", [$id])->fetchColumn();
             // Never expose a malformed storage path, even if a database row was manually edited.
             $key = $row['storage_key'];
+            $generated = $row['summary_generated_at'] ?? null;
+            $nextGeneration = $generated ? (new \DateTimeImmutable($generated, new \DateTimeZone('UTC')))->modify('+24 hours') : null;
             if (!preg_match('~^videos/[0-9a-f-]{36}\.(mp4|webm)$~D', $key)) {
                 throw new ApiError(500, 'INVALID_MEDIA_REFERENCE', 'Ошибка ссылки на видео');
             }
             return [
-                'id' => $row['id'], 'title' => $row['title'], 'status' => $row['status'],
+                'id' => $row['id'], 'title' => $row['title'], 'category' => $row['category'], 'status' => $row['status'],
                 'duration_ms' => $row['duration_ms'] === null ? null : (int) $row['duration_ms'],
                 'media_url' => (int) $row['size_bytes'] > 0 ? '/media/' . $key : null,
                 'availability' => ['transcript' => $row['transcript_ready_at'] !== null, 'search' => $row['index_ready_at'] !== null, 'summary' => $row['summary_ready_at'] !== null, 'terms' => $row['transcript_ready_at'] !== null],
                 'processing' => [
                     'job_id' => $job['id'] ?? null,
+                    'summary_regenerate_available_at' => $nextGeneration?->format('Y-m-d\TH:i:s.v\Z'),
+                    'can_regenerate_summary' => !$active && $row['transcript_ready_at'] !== null && $row['index_ready_at'] !== null && (!$nextGeneration || $nextGeneration <= new \DateTimeImmutable('now', new \DateTimeZone('UTC'))),
                     'failed_stage' => $job['failed_stage'] ?? null,
                     'error_code' => $job['error_code'] ?? null,
                     'error_message' => $job['error_message'] ?? null,
@@ -133,6 +158,7 @@ final class App
             throw new ApiError(413, 'FILE_TOO_LARGE', 'Видео превышает допустимый размер');
         }
         $title = Input::string($_POST['title'] ?? null, 'title', 200);
+        $category = Categories::validate($_POST['category'] ?? 'other');
         $file = $_FILES['file'] ?? null;
         if (!is_array($file) || !isset($file['error']) || !is_int($file['error'])) {
             throw Input::invalid('file', 'Выберите видео');
@@ -179,8 +205,8 @@ final class App
         // These files are public media served by Nginx's distinct runtime UID.
         chmod($destination, 0644);
         try {
-            $this->db->transaction(function () use ($id, $title, $name, $key, $mime, $size, $jobId): void {
-                $this->db->query("INSERT INTO lectures (id,title,original_filename,storage_key,mime_type,size_bytes,status,created_at,updated_at) VALUES (?,?,?,?,?,?,'queued',UTC_TIMESTAMP(3),UTC_TIMESTAMP(3))", [$id, $title, mb_substr($name, 0, 255), $key, $mime, $size]);
+            $this->db->transaction(function () use ($id, $title, $name, $key, $mime, $size, $jobId, $category): void {
+                $this->db->query("INSERT INTO lectures (id,title,original_filename,storage_key,mime_type,size_bytes,category,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,'queued',UTC_TIMESTAMP(3),UTC_TIMESTAMP(3))", [$id, $title, mb_substr($name, 0, 255), $key, $mime, $size, $category]);
                 $this->insertJob($id, $jobId);
             });
         } catch (\Throwable $e) {
@@ -193,6 +219,7 @@ final class App
     private function importVideo(array $body): array
     {
         $title = Input::string($body['title'] ?? null, 'title', 200);
+        $category = Categories::validate($body['category'] ?? 'other');
         $url = VideoSource::canonical(Input::string($body['url'] ?? null, 'url', 2000));
         $id = Config::uuid();
         $jobId = Config::uuid();
@@ -202,8 +229,8 @@ final class App
         if (file_put_contents($manifest, json_encode(['url' => $url], JSON_THROW_ON_ERROR), LOCK_EX) === false) throw new ApiError(503, 'STORAGE_UNAVAILABLE', 'Хранилище недоступно');
         chmod($manifest, 0644);
         try {
-            $this->db->transaction(function () use ($id, $jobId, $title): void {
-                $this->db->query("INSERT INTO lectures (id,title,original_filename,storage_key,mime_type,size_bytes,status,created_at,updated_at) VALUES (?,?,?,?,'video/mp4',0,'queued',UTC_TIMESTAMP(3),UTC_TIMESTAMP(3))", [$id, $title, $id . '.mp4', 'videos/' . $id . '.mp4']);
+            $this->db->transaction(function () use ($id, $jobId, $title, $category): void {
+                $this->db->query("INSERT INTO lectures (id,title,original_filename,storage_key,mime_type,size_bytes,category,status,created_at,updated_at) VALUES (?,?,?,?,'video/mp4',0,?,'queued',UTC_TIMESTAMP(3),UTC_TIMESTAMP(3))", [$id, $title, $id . '.mp4', 'videos/' . $id . '.mp4', $category]);
                 $this->insertJob($id, $jobId);
             });
         } catch (\Throwable $e) {
@@ -282,6 +309,24 @@ final class App
                 }
             }
             return ['lecture_id' => $id, 'text' => $text, 'chapters' => $rows];
+        });
+    }
+
+    private function regenerateSummary(string $id): array
+    {
+        return $this->db->transaction(function () use ($id): array {
+            $lecture = $this->lecture($id, true);
+            if (!$lecture['transcript_ready_at'] || !$lecture['index_ready_at']) throw new ApiError(409, 'LECTURE_NOT_READY', 'Дождитесь готовности транскрипта и поиска');
+            if ($this->db->query("SELECT id FROM processing_jobs WHERE lecture_id=? AND status IN ('queued','running') LIMIT 1 FOR UPDATE", [$id])->fetch()) throw new ApiError(409, 'PROCESSING_ALREADY_ACTIVE', 'Обработка уже запущена');
+            $next = $lecture['summary_generated_at'] ? (new \DateTimeImmutable($lecture['summary_generated_at'], new \DateTimeZone('UTC')))->modify('+24 hours') : null;
+            if ($next && $next > new \DateTimeImmutable('now', new \DateTimeZone('UTC'))) throw new ApiError(429, 'SUMMARY_REGENERATION_COOLDOWN', 'Повторная генерация доступна через 24 часа после последнего конспекта', ['available_at'=>$next->format('Y-m-d\TH:i:s.v\Z')]);
+            $this->db->query('DELETE FROM lecture_chapters WHERE lecture_id=?', [$id]);
+            $this->db->query('DELETE FROM lecture_summaries WHERE lecture_id=?', [$id]);
+            $jobId = Config::uuid();
+            $this->insertJob($id, $jobId);
+            $this->db->query("UPDATE processing_jobs SET stage='summarizing' WHERE id=?", [$jobId]);
+            $this->db->query("UPDATE lectures SET status='summarizing',summary_ready_at=NULL,updated_at=UTC_TIMESTAMP(3) WHERE id=?", [$id]);
+            return ['id'=>$id, 'status'=>'summarizing', 'job_id'=>$jobId];
         });
     }
 

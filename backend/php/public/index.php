@@ -20,6 +20,13 @@ try {
     }
     [$status, $body] = (new App())->dispatch($_SERVER['REQUEST_METHOD'] ?? 'GET', $path);
     http_response_code($status);
+    if ($body instanceof \DeepLecture\Download) {
+        header('Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+        header('Content-Disposition: attachment; filename="' . $body->filename . '"');
+        header('Content-Length: ' . strlen($body->content));
+        echo $body->content;
+        exit;
+    }
     echo json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
 } catch (Throwable $error) {
     if (!$error instanceof ApiError) {

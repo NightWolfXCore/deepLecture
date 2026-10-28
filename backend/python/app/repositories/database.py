@@ -163,24 +163,37 @@ class JobRepository(Database):
                     )
                     cursor.execute("UPDATE lectures SET status='failed',updated_at=UTC_TIMESTAMP(3) WHERE id=%s", (lecture["id"],))
                     return None
-                # Recovery always reprocesses from the original video.
-                self._clear(cursor, lecture["id"])
+                summary_only = current['stage'] == 'summarizing' and lecture.get('transcript_ready_at') and lecture.get('index_ready_at')
+                stage = 'summarizing' if summary_only else 'extracting'
+                if summary_only:
+                    cursor.execute('DELETE FROM lecture_chapters WHERE lecture_id=%s', (lecture['id'],))
+                    cursor.execute('DELETE FROM lecture_summaries WHERE lecture_id=%s', (lecture['id'],))
+                    cursor.execute('UPDATE lectures SET summary_ready_at=NULL WHERE id=%s', (lecture['id'],))
+                else:
+                    self._clear(cursor, lecture["id"])
                 token = str(uuid4())
                 cursor.execute(
-                    "UPDATE processing_jobs SET status='running',stage='extracting',attempt=attempt+1,"
+                    "UPDATE processing_jobs SET status='running',stage=%s,attempt=attempt+1,"
                     "worker_token=%s,heartbeat_at=UTC_TIMESTAMP(3),"
                     "lease_expires_at=TIMESTAMPADD(SECOND,%s,UTC_TIMESTAMP(3)),"
                     "started_at=COALESCE(started_at,UTC_TIMESTAMP(3)),finished_at=NULL,"
                     "error_code=NULL,error_message=NULL,failed_stage=NULL,updated_at=UTC_TIMESTAMP(3) WHERE id=%s",
-                    (token, self.lease_seconds, current["id"]),
+                    (stage, token, self.lease_seconds, current["id"]),
                 )
-                cursor.execute("UPDATE lectures SET status='extracting',updated_at=UTC_TIMESTAMP(3) WHERE id=%s", (lecture["id"],))
-                return {**current, "worker_token": token, "stage": "extracting", "status": "running",
+                cursor.execute("UPDATE lectures SET status=%s,updated_at=UTC_TIMESTAMP(3) WHERE id=%s", (stage, lecture["id"]))
+                return {**current, "worker_token": token, "stage": stage, "summary_only": bool(summary_only), "status": "running",
                         "attempt": current["attempt"] + 1, "storage_key": lecture["storage_key"]}
             result = self.write(acquire)
             if result:
                 return result
         return None
+
+    def summary_segments(self, job):
+        def read(cursor):
+            self._lock(cursor, job)
+            cursor.execute('SELECT id,position,start_ms,end_ms,text FROM transcript_segments WHERE lecture_id=%s ORDER BY position', (job['lecture_id'],))
+            return list(cursor.fetchall())
+        return self.write(read)
 
     def heartbeat(self, job: dict):
         def action(cursor):
@@ -295,7 +308,7 @@ class JobRepository(Database):
                 "INSERT INTO lecture_chapters (id,lecture_id,position,title,level,start_segment_id) VALUES (%s,%s,%s,%s,%s,%s)",
                 [(c["id"],job["lecture_id"],c["position"],c["title"],c["level"],c["start_segment_id"]) for c in summary["chapters"]],
             )
-            cursor.execute("UPDATE lectures SET summary_ready_at=UTC_TIMESTAMP(3) WHERE id=%s", (job["lecture_id"],))
+            cursor.execute("UPDATE lectures SET summary_ready_at=UTC_TIMESTAMP(3),summary_generated_at=UTC_TIMESTAMP(3) WHERE id=%s", (job["lecture_id"],))
             self._stage(cursor, job, "ready")
             cursor.execute("UPDATE processing_jobs SET status='succeeded',finished_at=UTC_TIMESTAMP(3),updated_at=UTC_TIMESTAMP(3) WHERE id=%s", (job["id"],))
         self.write(action)

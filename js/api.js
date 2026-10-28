@@ -55,10 +55,11 @@
     return body;
   }
 
-  function uploadLecture(title, file, onProgress) {
+  function uploadLecture(title, file, onProgress, category = 'other') {
     return new Promise((resolve, reject) => {
       const fd = new FormData();
       fd.append('title', title);
+      fd.append('category', category);
       fd.append('file', file);
       const xhr = new XMLHttpRequest();
       xhr.open('POST', CFG.API_BASE + '/lectures');
@@ -78,10 +79,12 @@
   window.ApiError = ApiError;
   window.RealApi = {
     uploadLecture,
-    importLecture: (title, url) => request('/lectures/import', { method: 'POST', json: { title, url } }),
-    listLectures: (page, perPage) => request(`/lectures?page=${page}&per_page=${perPage}`),
+    importLecture: (title, url, category = 'other') => request('/lectures/import', { method: 'POST', json: { title, url, category } }),
+    listLectures: (page, perPage, category = '') => request(`/lectures?page=${page}&per_page=${perPage}${category ? '&category=' + encodeURIComponent(category) : ''}`),
+    setCategory: (id, category) => request(`/lectures/${encodeURIComponent(id)}`, { method: 'PATCH', json: {category} }),
     getLecture: (id) => request(`/lectures/${encodeURIComponent(id)}`),
     getTranscript: (id) => request(`/lectures/${encodeURIComponent(id)}/transcript`),
+    regenerateSummary: (id) => request(`/lectures/${encodeURIComponent(id)}/summary/regenerate`, {method:'POST'}),
     getSummary: (id) => request(`/lectures/${encodeURIComponent(id)}/summary`),
     search: (payload, signal) => request('/search', { method: 'POST', json: payload, signal }),
     retry: (id) => request(`/lectures/${encodeURIComponent(id)}/retry`, { method: 'POST' }),
