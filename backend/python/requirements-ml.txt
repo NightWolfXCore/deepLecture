@@ -1,0 +1,5 @@
+-r requirements.txt
+sentence-transformers==3.4.1
+transformers==4.48.3
+huggingface-hub==0.28.1
+faster-whisper==1.1.1

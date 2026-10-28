@@ -1,0 +1,17 @@
+# Last override, after compose.yml and compose.ollama.yml. Prepare all images and
+# weights online first. The internal bridge blocks containers' external routing.
+services:
+  search:
+    environment:
+      MODELS_OFFLINE: "true"
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+  worker:
+    environment:
+      MODELS_OFFLINE: "true"
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+
+networks:
+  default:
+    internal: true

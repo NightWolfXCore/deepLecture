@@ -1,0 +1,6 @@
+# Optional integration with an untouched checkout of the frontend branch.
+services:
+  nginx:
+    volumes:
+      - ${FRONTEND_ROOT:?Set FRONTEND_ROOT to the absolute frontend checkout path}:/app/frontend/public:ro
+      - ./frontend-api-config.js:/app/frontend/public/js/config.js:ro

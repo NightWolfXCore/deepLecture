@@ -1,0 +1,8 @@
+{
+  "name": "deeplecture/api",
+  "description": "Public PHP API for deepLecture",
+  "type": "project",
+  "require": {"php": ">=8.3", "ext-pdo": "*", "ext-pdo_mysql": "*", "ext-mbstring": "*", "ext-curl": "*", "ext-fileinfo": "*"},
+  "autoload": {"psr-4": {"DeepLecture\\": "src/"}},
+  "scripts": {"test": "php ../../tests/backend/php/unit.php"}
+}

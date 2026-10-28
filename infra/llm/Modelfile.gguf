@@ -1,0 +1,4 @@
+# Paths here refer to the Ollama container, not the host filesystem.
+# Import preserves the GGUF file's actual quantization.
+FROM /imports/model.gguf
+PARAMETER num_ctx 16384

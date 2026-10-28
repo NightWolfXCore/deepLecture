@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ru" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#120A20">
+  <title>DeepLecture — поиск по видеолекциям</title>
+  <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
+  <link href="assets/vendor/bootstrap.min.css" rel="stylesheet">
+  <link href="css/style.css" rel="stylesheet">
+</head>
+<body>
+  <header class="app-header sticky-top">
+    <div class="container d-flex align-items-center justify-content-between py-2">
+      <a href="./" data-nav class="brand">
+        <img src="assets/logo.svg" alt="" width="36" height="36">
+        <span class="brand-name"><b>Deep</b>Lecture</span>
+      </a>
+    </div>
+  </header>
+
+  <main class="container py-4" id="app"></main>
+
+  <footer class="app-footer container py-4 small text-center">
+    DeepLecture — проект хакатона «Киберрывок», осень 2026
+  </footer>
+
+  <div class="toast-container position-fixed bottom-0 end-0 p-3" id="toasts"></div>
+
+  <script src="assets/vendor/bootstrap.bundle.min.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
