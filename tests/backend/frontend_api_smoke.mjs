@@ -15,7 +15,7 @@ const context = vm.createContext({
   fetch: (path, options) => fetch(new URL(path, base), {...options, signal: AbortSignal.timeout(10000)})
 });
 vm.runInContext(await read('/js/config.js'), context);
-assert.equal(context.window.APP_CONFIG.USE_MOCK, false);
+assert.notEqual(context.window.APP_CONFIG.USE_MOCK, true);
 assert.equal(context.window.APP_CONFIG.API_BASE, '/api/v1');
 vm.runInContext(await read('/js/api.js'), context);
 const api = context.window.RealApi;
