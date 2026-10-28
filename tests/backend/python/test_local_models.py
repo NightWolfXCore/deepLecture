@@ -27,13 +27,13 @@ def test_local_openai_protocol_and_explicit_auth(mode, key, expected):
         assert str(request.url) == "http://ollama:11434/v1/chat/completions"
         assert request.headers.get("Authorization") == expected
         payload = json.loads(request.content)
-        assert payload["model"] == "qwen3:4b"
+        assert payload["model"] == "Qwen3-4B-Q4_K_M"
         assert payload["reasoning_effort"] == "none"
         assert payload["response_format"] == {"type": "json_object"}
         assert json.loads(payload["messages"][1]["content"])["lecture_segments"] == SEGMENTS
         result = dict(text="Конспект", chapters=[dict(title="Теорема", level=1, start_segment_id="anchor")])
         return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(result)}}]})
-    settings = replace(Settings(), llm_base_url="http://ollama:11434/v1/", llm_model="qwen3:4b",
+    settings = replace(Settings(), llm_base_url="http://ollama:11434/v1/", llm_model="Qwen3-4B-Q4_K_M",
                        llm_auth_mode=mode, llm_api_key=key, llm_allow_http=True, llm_reasoning_effort="none")
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         assert Summarizer(settings, client).summarize(SEGMENTS)["chapters"][0]["start_segment_id"] == "anchor"

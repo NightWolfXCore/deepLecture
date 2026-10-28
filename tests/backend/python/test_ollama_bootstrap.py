@@ -25,7 +25,7 @@ case "$1" in
 esac
 ''')
     binary.chmod(0o755)
-    model=tmp_path/'model.gguf'; model.write_bytes(b'fake test file only')
+    model=tmp_path/'Qwen3-4B-Q4_K_M.gguf'; model.write_bytes(b'fake test file only')
     env={**os.environ,'PATH':str(tmp_path)+os.pathsep+os.environ['PATH'],'GGUF_PATH':str(model),'FAKE_IMPORT_EXIT':'1' if fail_import else '0'}
     log=tmp_path/'log'
     with log.open('w') as out:
@@ -41,7 +41,7 @@ esac
                 assert process.wait(timeout=2)==1
                 assert 'Local model' not in log.read_text()
             else:
-                assert 'Local model deeplecture-qwen3:4b is available' in log.read_text()
+                assert 'Local model Qwen3-4B-Q4_K_M is available' in log.read_text()
                 assert process.poll() is None
         finally:
             if process.poll() is None: process.terminate()
