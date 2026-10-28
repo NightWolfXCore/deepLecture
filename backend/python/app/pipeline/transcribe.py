@@ -1,3 +1,4 @@
+import logging
 from uuid import uuid4
 from .errors import PipelineError
 
@@ -24,7 +25,8 @@ class Transcriber:
             )
             self.model = WhisperModel(path, device="cpu", compute_type="int8",
                                       cpu_threads=self.settings.cpu_threads, num_workers=1)
-        except Exception:
+        except Exception as exc:
+            logging.getLogger(__name__).error("ASR unavailable: type=%s", type(exc).__name__)
             raise PipelineError("ASR_UNAVAILABLE", "Модель распознавания речи недоступна") from None
 
     def transcribe(self, audio_path, duration_ms):

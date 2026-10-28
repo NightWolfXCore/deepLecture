@@ -50,11 +50,11 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     image: deeplecture-php:local
   migrate:
     image: deeplecture-python:local
-    profiles:
-    - setup
     environment:
       DB_HOST: mysql
       DB_PORT: '3306'
@@ -73,6 +73,7 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+    restart: on-failure:3
   nginx:
     image: nginx:1.27-alpine
     ports:
@@ -124,6 +125,9 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
   worker:
     image: deeplecture-python:local
     group_add:
@@ -168,6 +172,9 @@ services:
         condition: service_healthy
       ollama:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
   ollama:
     image: ${OLLAMA_IMAGE:-ollama/ollama:0.40.12}
     environment:
@@ -200,6 +207,7 @@ services:
     depends_on:
       init-env:
         condition: service_completed_successfully
+    restart: unless-stopped
   init-env:
     image: deeplecture-php:local
     volumes:

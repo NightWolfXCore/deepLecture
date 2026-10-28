@@ -24,7 +24,8 @@ try {
 } catch (Throwable $error) {
     if (!$error instanceof ApiError) {
         // Do not log raw database/upstream messages, which can contain secrets.
-        error_log('request=' . $requestId . ' exception=' . get_class($error));
+        error_log('request=' . $requestId . ' exception=' . get_class($error)
+            . ($error instanceof PDOException ? ' db_errno=' . (int) ($error->errorInfo[1] ?? 0) : ''));
         $error = new ApiError(500, 'INTERNAL_ERROR', 'Внутренняя ошибка сервера');
     }
     http_response_code($error->status);

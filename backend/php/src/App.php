@@ -16,7 +16,8 @@ final class App
         }
         if ($path === '/api/v1/ready' && $method === 'GET') {
             try {
-                $this->db->query('SELECT 1');
+                $this->db->query('SELECT id, index_ready_at FROM lectures LIMIT 0');
+                $this->db->query('SELECT id, worker_token, lease_expires_at FROM processing_jobs LIMIT 0');
                 $this->python->request('/internal/v1/ready');
             } catch (\Throwable) {
                 throw new ApiError(503, 'DEPENDENCY_UNAVAILABLE', 'Зависимости приложения ещё не готовы');

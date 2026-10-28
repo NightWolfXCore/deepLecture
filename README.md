@@ -142,7 +142,12 @@ docker compose run --rm --no-deps worker python -m app.check_llm
 
 Выполняйте команды последовательно; при ошибке сначала исправьте её.
 `php` и `search` собирают PHP и общий Python-образ, используемый также worker
-и мигратором. `migrate` ждёт готовности MySQL и применяет **production-миграции
+и мигратором. При обычном `docker compose up -d` сервис `migrate` запускается автоматически;
+PHP, search и worker ждут его успешного завершения. При ошибке миграции запуск
+зависимых сервисов блокируется, а причина остаётся в `docker compose logs migrate`.
+Ручной запуск выше также поддерживается.
+
+`migrate` ждёт готовности MySQL и применяет **production-миграции
 из `migrations/`**. Повторный запуск безопасен; тестовые seeds не нужны.
 Уже применённые SQL-файлы изменять нельзя.
 
@@ -275,3 +280,17 @@ Whisper/E5/Qwen, точность попадания ASR в речь
 ## Лицензия
 
 Проект распространяется на условиях [LICENSE](LICENSE).
+
+## Восстановление после ошибки отсутствующих таблиц
+
+Если в логах есть MySQL 1146 (`Table ... doesn't exist`), выполните:
+
+```text
+docker compose run --rm migrate
+docker compose run --rm migrate python /app/migrate.py --status
+docker compose restart php search worker
+```
+
+Ожидается `[x] 001_initial_schema.sql`. Данные и модели удалять не нужно.
+Для разработки исправления находятся в `dev`; `main` содержит только релизы.
+Логи: `docker compose logs --no-color --tail 100 php search worker migrate mysql ollama`.
