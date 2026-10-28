@@ -93,3 +93,21 @@ def test_invalid_json_returns_400():
         r=client.post('/internal/v1/search',content='{',headers={'Content-Type':'application/json'})
         assert r.status_code==400
         assert r.json()['error']['code']=='INVALID_JSON'
+
+
+def test_model_recovers_after_transient_startup_failure():
+    import time
+    class RecoveringEncoder(Encoder):
+        attempts = 0
+        def load(self):
+            self.attempts += 1
+            if self.attempts == 1:
+                raise PipelineError('EMBEDDING_UNAVAILABLE', 'temporary failure')
+    encoder = RecoveringEncoder()
+    with TestClient(create_app(Settings(), Repository(), encoder, retry_interval=0.01)) as client:
+        deadline = time.monotonic() + 2
+        while client.get('/internal/v1/ready').status_code != 200:
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+        assert encoder.attempts == 2
+        assert client.post('/internal/v1/search', json={'lecture_id': LECTURE, 'query': 'текст'}).status_code == 200

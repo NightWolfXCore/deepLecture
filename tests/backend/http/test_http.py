@@ -325,3 +325,17 @@ def test_rejects_incompatible_embedding_revision(client, db):
         cur.execute("UPDATE chunk_embeddings SET model_revision='wrong-model' WHERE chunk_id=%s", (ids["chunk"],))
     response = client.post("/api/v1/search", json={"lecture_id": ids["lecture"], "query": "Теорема"})
     error(response, 503)
+
+
+def test_missing_schema_returns_actionable_unavailable_without_sql_leak(client, db):
+    with db.cursor() as cursor:
+        cursor.execute('RENAME TABLE lectures TO lectures_startup_probe')
+    try:
+        response = client.get('/api/v1/lectures')
+        error(response, 503, 'DATABASE_SCHEMA_NOT_READY')
+        assert 'SQLSTATE' not in response.text
+        assert client.get('/api/v1/ready').status_code == 503
+    finally:
+        with db.cursor() as cursor:
+            cursor.execute('RENAME TABLE lectures_startup_probe TO lectures')
+    assert client.get('/api/v1/lectures').status_code == 200
