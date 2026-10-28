@@ -2,6 +2,7 @@
 CREATE TABLE IF NOT EXISTS lectures (
  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
  title VARCHAR(200) NOT NULL,
+ category VARCHAR(32) NOT NULL DEFAULT 'other',
  original_filename VARCHAR(255) NOT NULL,
  storage_key VARCHAR(255) NOT NULL UNIQUE,
  mime_type VARCHAR(100) NOT NULL,
@@ -11,6 +12,7 @@ CREATE TABLE IF NOT EXISTS lectures (
  transcript_ready_at DATETIME(3) NULL,
  index_ready_at DATETIME(3) NULL,
  summary_ready_at DATETIME(3) NULL,
+ summary_generated_at DATETIME(3) NULL,
  created_at DATETIME(3) NOT NULL,
  updated_at DATETIME(3) NOT NULL,
  INDEX lectures_catalog (created_at, id),

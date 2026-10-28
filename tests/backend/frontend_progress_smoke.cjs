@@ -6,7 +6,7 @@ const assert=require('node:assert/strict');
  const b=await chromium.launch({executablePath:'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
  try {
   const p=await b.newPage();
-  await p.goto(base);
+  await p.goto(base + '/?view=catalog');
   await p.locator('.list-group-item').first().waitFor();
   const nulls=await p.evaluate(()=>{const w=document.createTreeWalker(document.querySelector('#app'),NodeFilter.SHOW_TEXT); let n;while(n=w.nextNode())if(n.textContent.trim()==='null')return true;return false;});
   assert.equal(nulls,false);

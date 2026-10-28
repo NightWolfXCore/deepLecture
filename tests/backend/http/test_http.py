@@ -339,3 +339,93 @@ def test_missing_schema_returns_actionable_unavailable_without_sql_leak(client, 
         with db.cursor() as cursor:
             cursor.execute('RENAME TABLE lectures_startup_probe TO lectures')
     assert client.get('/api/v1/lectures').status_code == 200
+
+
+def test_categories_validate_filter_and_change_without_resetting_pipeline(client, db):
+    a = seed(db)
+    b = seed(db)
+    changed = client.patch(f"/api/v1/lectures/{a['lecture']}", json={'category':'mathematics'})
+    assert changed.status_code == 200, changed.text
+    response = client.get('/api/v1/lectures?category=mathematics').json()
+    assert response['meta']['total'] == 1
+    assert [row['id'] for row in response['data']] == [a['lecture']]
+    card = client.get(f"/api/v1/lectures/{a['lecture']}").json()['data']
+    assert card['category'] == 'mathematics' and card['availability']['search']
+    error(client.get('/api/v1/lectures?category=invalid'),422,'VALIDATION_ERROR')
+    error(client.patch(f"/api/v1/lectures/{a['lecture']}", json={'category':'invalid'}),422,'VALIDATION_ERROR')
+    imported = client.post('/api/v1/lectures/import',json={'title':'Physics','url':'https://vimeo.com/12345','category':'physics'})
+    assert imported.status_code == 202
+    assert client.get('/api/v1/lectures?category=physics').json()['meta']['total'] == 1
+
+
+def test_summary_docx_is_real_ooxml_and_escapes_source(client, db):
+    import io
+    import zipfile
+    import xml.etree.ElementTree as ET
+    ids = seed(db)
+    text = '## Определение\n**Логарифм** — показатель степени.\n- a > 0 & a ≠ 1\n1. Решим пример.'
+    with db.cursor() as cur:
+        cur.execute('UPDATE lectures SET title=%s WHERE id=%s', ('Тема <script> & логарифм',ids['lecture']))
+        cur.execute('UPDATE lecture_summaries SET text=%s WHERE lecture_id=%s',(text,ids['lecture']))
+    response = client.get(f"/api/v1/lectures/{ids['lecture']}/summary.docx")
+    assert response.status_code == 200, response.text[:100]
+    assert 'wordprocessingml.document' in response.headers['content-type']
+    assert 'attachment;' in response.headers['content-disposition']
+    with zipfile.ZipFile(io.BytesIO(response.content)) as doc:
+        assert doc.testzip() is None
+        for name in doc.namelist(): ET.fromstring(doc.read(name))
+        xml = doc.read('word/document.xml').decode()
+        assert 'Heading2' in xml and '<w:b/>' in xml
+        assert '&lt;script&gt;' in xml and '&amp;' in xml
+        assert 'ИИ может ошибаться' in xml and 'Навигация по лекции' in xml
+    queued = seed(db, 'queued', False)
+    error(client.get(f"/api/v1/lectures/{queued['lecture']}/summary.docx"),409,'SUMMARY_NOT_READY')
+    error(client.get('/api/v1/lectures/ffffffff-ffff-4fff-8fff-ffffffffffff/summary.docx'),404,'LECTURE_NOT_FOUND')
+
+
+def test_regenerate_summary_reuses_transcript_and_index(client, db, tmp_path):
+    from dataclasses import replace
+    from types import SimpleNamespace
+    from app.config import Settings
+    from app.repositories.database import JobRepository
+    from app.worker import Worker
+    ids = seed(db)
+    response = client.post(f"/api/v1/lectures/{ids['lecture']}/summary/regenerate")
+    assert response.status_code == 202, response.text
+    error(client.post(f"/api/v1/lectures/{ids['lecture']}/summary/regenerate"),409,'PROCESSING_ALREADY_ACTIVE')
+    card=client.get(f"/api/v1/lectures/{ids['lecture']}").json()['data']
+    assert card['availability']['search'] and card['availability']['transcript'] and not card['availability']['summary']
+    cfg=replace(Settings.from_env(), storage_root=tmp_path)
+    def summary(segments):
+        assert len(segments)==1
+        return {'text':'## Определение\nУчебный конспект','provider':'test','model_name':'fixture',
+            'chapters':[{'id':uid(),'position':0,'title':'Определение','level':1,'start_segment_id':segments[0]['id']}]}
+    forbidden=SimpleNamespace(extract=lambda *a:pytest.fail('FFmpeg must not run'),transcribe=lambda *a:pytest.fail('ASR must not run'))
+    worker=Worker(cfg,repository=JobRepository(cfg),audio=forbidden,transcriber=forbidden,
+                  summarizer=SimpleNamespace(summarize=summary),heartbeat_interval=.1)
+    assert worker.run_once()
+    card=client.get(f"/api/v1/lectures/{ids['lecture']}").json()['data']
+    assert card['status']=='ready' and card['availability']['search']
+    assert client.get(f"/api/v1/lectures/{ids['lecture']}/summary").json()['data']['text'].startswith('## Определение')
+    with db.cursor() as cur:
+        cur.execute('SELECT id FROM search_chunks WHERE lecture_id=%s',(ids['lecture'],))
+        assert cur.fetchone()['id']==ids['chunk']
+
+
+def test_summary_cooldown_is_enforced_on_server_and_preserves_data(client, db):
+    ids=seed(db)
+    with db.cursor() as cur:
+        cur.execute('UPDATE lectures SET summary_generated_at=UTC_TIMESTAMP(3) WHERE id=%s',(ids['lecture'],))
+    response=client.post(f"/api/v1/lectures/{ids['lecture']}/summary/regenerate")
+    error(response,429,'SUMMARY_REGENERATION_COOLDOWN')
+    assert response.json()['error']['details']['available_at'].endswith('Z')
+    card=client.get(f"/api/v1/lectures/{ids['lecture']}").json()['data']
+    assert not card['processing']['can_regenerate_summary']
+    assert card['availability']['summary']
+    assert client.get(f"/api/v1/lectures/{ids['lecture']}/summary").status_code==200
+    with db.cursor() as cur:
+        cur.execute('UPDATE lectures SET summary_generated_at=UTC_TIMESTAMP(3)-INTERVAL 24 HOUR-INTERVAL 1 SECOND WHERE id=%s',(ids['lecture'],))
+    assert client.get(f"/api/v1/lectures/{ids['lecture']}").json()['data']['processing']['can_regenerate_summary']
+    def request(): return client.post(f"/api/v1/lectures/{ids['lecture']}/summary/regenerate").status_code
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(lambda _:request(),range(2)))==[202,409]
