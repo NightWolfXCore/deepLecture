@@ -19,6 +19,7 @@ const assert=require('node:assert/strict');
   await p.getByText('Скачивание видео…',{exact:true}).waitFor();
   assert.match(await p.locator('#app').innerText(),/Этап 2 из 5/);
   assert.doesNotMatch(await p.locator('#app').innerText(),/33%/);
+  assert.equal(await p.evaluate(()=>{const w=document.createTreeWalker(document.querySelector('#app'),NodeFilter.SHOW_TEXT);let n;while(n=w.nextNode())if(n.textContent.trim()==='null')return true;return false;}),false);
   console.log('Browser checks passed: no null pager; download stage; no invented percentage.');
  } finally {await b.close();}
 })().catch(e=>{console.error(e);process.exitCode=1});
