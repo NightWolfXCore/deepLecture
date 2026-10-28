@@ -113,7 +113,7 @@ services:
       LLM_REASONING_EFFORT: none
       LLM_STRUCTURED_OUTPUT: 'true'
       LLM_ALLOW_HTTP: 'true'
-      LLM_TIMEOUT: '300'
+      LLM_TIMEOUT: '1200'
     volumes:
     - models:/models
     command:
@@ -161,7 +161,7 @@ services:
       LLM_REASONING_EFFORT: none
       LLM_STRUCTURED_OUTPUT: 'true'
       LLM_ALLOW_HTTP: 'true'
-      LLM_TIMEOUT: '300'
+      LLM_TIMEOUT: '1200'
     volumes:
     - storage:/data
     - models:/models

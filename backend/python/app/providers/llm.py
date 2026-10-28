@@ -59,14 +59,15 @@ class Summarizer:
         if cfg.llm_reasoning_effort:
             payload["reasoning_effort"] = cfg.llm_reasoning_effort
         own_client = self.client is None
-        client = self.client or httpx.Client(timeout=cfg.llm_timeout, follow_redirects=False)
+        client = self.client or httpx.Client(timeout=httpx.Timeout(cfg.llm_timeout, connect=min(10, cfg.llm_timeout), pool=min(5, cfg.llm_timeout)), follow_redirects=False)
         try:
             for attempt in range(3):
-                logging.getLogger(__name__).info("LLM request started attempt=%d", attempt + 1)
+                started = time.monotonic()
+                logging.getLogger(__name__).info("LLM request started attempt=%d timeout_s=%.0f", attempt + 1, cfg.llm_timeout)
                 try:
                     response = client.post(cfg.llm_base_url.rstrip("/") + "/chat/completions",
                                            headers=headers, json=payload)
-                    if response.status_code == 429 or 500 <= response.status_code < 600:
+                    if response.status_code in (429, 503):
                         if attempt < 2:
                             self.sleep(2 ** attempt)
                             continue
@@ -79,7 +80,8 @@ class Summarizer:
                             429: ("LLM_RATE_LIMITED", "LLM ограничил частоту запросов; повторите позже"),
                         }.get(response.status_code, ("LLM_HTTP_ERROR", "LLM вернул ошибку HTTP " + str(response.status_code)))
                         raise PipelineError(code, message)
-                    choice = response.json()["choices"][0]
+                    envelope = response.json()
+                    choice = envelope["choices"][0]
                     if choice.get("finish_reason") == "length":
                         raise PipelineError("LLM_RESPONSE_TRUNCATED", "Ответ LLM обрезан по лимиту токенов; конспект не сохранён")
                     body = choice["message"]["content"]
@@ -89,12 +91,21 @@ class Summarizer:
                     result = json.loads(body)
                     if not isinstance(result, dict):
                         raise ValueError("Invalid JSON object")
-                    logging.getLogger(__name__).info("LLM JSON response received")
+                    usage = envelope.get('usage') or {}
+                    tokens = usage.get('completion_tokens') if isinstance(usage, dict) else None
+                    logging.getLogger(__name__).info('LLM JSON response received elapsed_s=%.1f completion_tokens=%s',
+                        time.monotonic() - started, tokens if type(tokens) is int else 'unknown')
                     return result
-                except (httpx.TimeoutException, httpx.NetworkError):
+                except (httpx.ConnectTimeout, httpx.ConnectError):
                     if attempt == 2:
                         raise
+                    logging.getLogger(__name__).warning('LLM connection failed; retrying before generation')
                     self.sleep(2 ** attempt)
+                except (httpx.TimeoutException, httpx.NetworkError):
+                    # A submitted generation may still be running in Ollama.
+                    # Resubmitting after a read timeout adds another expensive request.
+                    logging.getLogger(__name__).warning('LLM request interrupted elapsed_s=%.1f; generation will not be resubmitted', time.monotonic() - started)
+                    raise
             raise ValueError("No LLM result")
         except httpx.TimeoutException:
             raise PipelineError("LLM_TIMEOUT", "LLM не ответил за отведённое время; проверьте загрузку модели и ресурсы сервера") from None
@@ -179,8 +190,11 @@ class Summarizer:
     def summarize(self, segments):
         positions = {segment["id"]: i for i, segment in enumerate(segments)}
         partial_texts, chapters = [], []
-        for batch in self._batches(segments):
+        batches = list(self._batches(segments))
+        for number, batch in enumerate(batches, 1):
+            logging.getLogger(__name__).info('Summary batch started part=%d total=%d', number, len(batches))
             result = self._request({"lecture_segments": batch})
+            logging.getLogger(__name__).info('Summary batch completed part=%d total=%d', number, len(batches))
             partial_texts.append(result["text"].strip())
             valid = {s["id"] for s in batch}
             for chapter in result["chapters"]:
@@ -202,6 +216,7 @@ class Summarizer:
                 if len(group) == 1:
                     reduced.extend(group)
                 else:
+                    logging.getLogger(__name__).info('Summary merge started parts=%d', len(group))
                     reduced.append(self._request({"partial_summaries": group,
                         "task": "Объедини учебные разделы без повторов, сохрани определения, формулы, условия и пошаговые примеры. Верни text и chapters: []."})["text"].strip())
             partial_texts = reduced
