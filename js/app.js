@@ -509,9 +509,9 @@
       const st = STATUS[d.status] || STATUS.queued;
       badge.className = 'badge ' + st.cls;
       badge.textContent = st.label;
-      metaEl.replaceChildren(
+      metaEl.replaceChildren(...[
         d.duration_ms ? h('span', { class: 'me-3' }, 'Длительность ' + formatTime(d.duration_ms)) : null,
-        h('span', null, 'Загружено ' + formatDate(d.created_at)));
+        h('span', null, 'Загружено ' + formatDate(d.created_at))].filter(Boolean));
 
       if (d.media_url && !S.mediaSet) { video.src = d.media_url; S.mediaSet = true; }
       renderBanner(d);

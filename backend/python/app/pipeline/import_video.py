@@ -83,31 +83,32 @@ class VideoImporter:
         log = directory / 'download.log'
         process = None
         logger = logging.getLogger(__name__)
-        logger.info('Import download started lecture=%s', job['lecture_id'])
+        logger.info('Import download started lecture=%s', job.get('lecture_id', job['id']))
         started = time.monotonic()
         next_report = started + 15
         try:
             with log.open('wb') as output:
                 process = subprocess.Popen(command, stdout=output, stderr=output, start_new_session=os.name == 'posix')
-                deadline = time.monotonic() + getattr(self.settings, 'import_timeout', 1800)
+                deadline = started + getattr(self.settings, 'import_timeout', 1800)
                 while process.poll() is None:
-                    if time.monotonic() > deadline:
+                    now = time.monotonic()
+                    if now > deadline:
                         raise PipelineError('IMPORT_TIMEOUT', 'Время загрузки видео истекло')
                     # Two streams plus merge output can coexist temporarily.
                     size = sum(p.stat().st_size for p in directory.iterdir() if p.is_file())
-                    if time.monotonic() >= next_report:
-                        logger.info('Import download running lecture=%s elapsed_s=%d temporary_bytes=%d', job['lecture_id'], int(time.monotonic() - started), size)
-                        next_report = time.monotonic() + 15
+                    if now >= next_report:
+                        logger.info('Import download running lecture=%s elapsed_s=%d temporary_bytes=%d', job.get('lecture_id', job['id']), int(now - started), size)
+                        next_report = now + 15
                     if size > maximum * 3 + 1048576:
                         raise PipelineError('IMPORT_TOO_LARGE', 'Видео превышает лимит импорта')
                     time.sleep(0.25)
                 path = directory / 'video.mp4'
                 if process.returncode or not path.is_file() or path.stat().st_size <= 0:
-                    logger.warning('Import download failed lecture=%s exit_code=%s', job['lecture_id'], process.returncode)
+                    logger.warning('Import download failed lecture=%s exit_code=%s', job.get('lecture_id', job['id']), process.returncode)
                     raise PipelineError('IMPORT_FAILED', 'Не удалось загрузить публичное видео; проверьте доступность ссылки')
                 if path.stat().st_size > maximum:
                     raise PipelineError('IMPORT_TOO_LARGE', 'Видео превышает лимит импорта')
-                logger.info('Import download completed lecture=%s bytes=%d', job['lecture_id'], path.stat().st_size)
+                logger.info('Import download completed lecture=%s bytes=%d', job.get('lecture_id', job['id']), path.stat().st_size)
                 return path
         except OSError:
             raise PipelineError('IMPORT_FAILED', 'Загрузчик видео недоступен') from None
