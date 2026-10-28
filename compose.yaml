@@ -1,0 +1,218 @@
+# Automatic local demo: no configuration editing; add storage/llm/model.gguf.
+name: deeplecture-demo
+x-app-env:
+  DB_HOST: mysql
+  DB_PORT: '3306'
+  DB_NAME: ${DB_NAME:-deeplecture}
+  DB_USER: root
+  DB_PASSWORD: ''
+  STORAGE_ROOT: /data
+  NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1},mysql,php,nginx,search,ollama
+  no_proxy: ${NO_PROXY:-localhost,127.0.0.1},mysql,php,nginx,search,ollama
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: ${DB_NAME:-deeplecture}
+      MYSQL_ROOT_PASSWORD: ''
+      MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
+      MYSQL_ROOT_HOST: '%'
+    volumes:
+    - mysql-data:/var/lib/mysql
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - MYSQL_PWD="$$MYSQL_ROOT_PASSWORD" mysql -uroot -D"$$MYSQL_DATABASE" -e "SELECT
+        1" >/dev/null
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    depends_on:
+      init-env:
+        condition: service_completed_successfully
+  php:
+    build:
+      context: .
+      dockerfile: backend/php/Dockerfile
+    environment:
+      DB_HOST: mysql
+      DB_PORT: '3306'
+      DB_NAME: ${DB_NAME:-deeplecture}
+      DB_USER: root
+      DB_PASSWORD: ''
+      STORAGE_ROOT: /data
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1},mysql,php,nginx,search,ollama
+      no_proxy: ${NO_PROXY:-localhost,127.0.0.1},mysql,php,nginx,search,ollama
+      PYTHON_API_URL: http://search:8000
+      MAX_UPLOAD_BYTES: '524288000'
+    volumes:
+    - storage:/data
+    depends_on:
+      mysql:
+        condition: service_healthy
+    image: deeplecture-php:local
+  migrate:
+    image: deeplecture-python:local
+    profiles:
+    - setup
+    environment:
+      DB_HOST: mysql
+      DB_PORT: '3306'
+      DB_NAME: ${DB_NAME:-deeplecture}
+      DB_USER: root
+      DB_PASSWORD: ''
+      STORAGE_ROOT: /data
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1},mysql,php,nginx,search,ollama
+      no_proxy: ${NO_PROXY:-localhost,127.0.0.1},mysql,php,nginx,search,ollama
+    volumes:
+    - ./migrate.py:/app/migrate.py:ro
+    - ./migrations:/app/migrations:ro
+    command:
+    - python
+    - /app/migrate.py
+    depends_on:
+      mysql:
+        condition: service_healthy
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+    - 127.0.0.1:${HTTP_PORT:-8080}:80
+    volumes:
+    - ./infra/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    - storage:/data:ro
+    - ./index.html:/app/frontend/public/index.html:ro
+    - ./css:/app/frontend/public/css:ro
+    - ./js:/app/frontend/public/js:ro
+    - ./assets:/app/frontend/public/assets:ro
+    depends_on:
+    - php
+  search:
+    image: deeplecture-python:local
+    build:
+      context: .
+      dockerfile: backend/python/Dockerfile
+    environment:
+      DB_HOST: mysql
+      DB_PORT: '3306'
+      DB_NAME: ${DB_NAME:-deeplecture}
+      DB_USER: root
+      DB_PASSWORD: ''
+      STORAGE_ROOT: /data
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1},mysql,php,nginx,search,ollama
+      no_proxy: ${NO_PROXY:-localhost,127.0.0.1},mysql,php,nginx,search,ollama
+      MODEL_CACHE: /models
+      MODELS_OFFLINE: ${MODELS_OFFLINE:-false}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-intfloat/multilingual-e5-small}
+      EMBEDDING_REVISION: ${EMBEDDING_REVISION:-}
+      CPU_THREADS: ${CPU_THREADS:-2}
+      LLM_BASE_URL: http://ollama:11434/v1
+      LLM_MODEL: deeplecture-qwen3:4b
+      LLM_API_KEY: ''
+      LLM_AUTH_MODE: none
+      LLM_REASONING_EFFORT: none
+      LLM_ALLOW_HTTP: 'true'
+      LLM_TIMEOUT: '300'
+    volumes:
+    - models:/models
+    command:
+    - uvicorn
+    - app.api:app
+    - --host
+    - 0.0.0.0
+    - --port
+    - '8000'
+    depends_on:
+      mysql:
+        condition: service_healthy
+  worker:
+    image: deeplecture-python:local
+    group_add:
+    - '33'
+    build:
+      context: .
+      dockerfile: backend/python/Dockerfile
+    environment:
+      DB_HOST: mysql
+      DB_PORT: '3306'
+      DB_NAME: ${DB_NAME:-deeplecture}
+      DB_USER: root
+      DB_PASSWORD: ''
+      STORAGE_ROOT: /data
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1},mysql,php,nginx,search,ollama
+      no_proxy: ${NO_PROXY:-localhost,127.0.0.1},mysql,php,nginx,search,ollama
+      MODEL_CACHE: /models
+      MODELS_OFFLINE: ${MODELS_OFFLINE:-false}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-intfloat/multilingual-e5-small}
+      EMBEDDING_REVISION: ${EMBEDDING_REVISION:-}
+      WHISPER_MODEL: ${WHISPER_MODEL:-small}
+      WHISPER_REVISION: ${WHISPER_REVISION:-}
+      MAX_IMPORT_BYTES: ${MAX_IMPORT_BYTES:-524288000}
+      IMPORT_TIMEOUT: ${IMPORT_TIMEOUT:-1800}
+      CPU_THREADS: ${CPU_THREADS:-2}
+      LLM_BASE_URL: http://ollama:11434/v1
+      LLM_MODEL: deeplecture-qwen3:4b
+      LLM_API_KEY: ''
+      LLM_AUTH_MODE: none
+      LLM_REASONING_EFFORT: none
+      LLM_ALLOW_HTTP: 'true'
+      LLM_TIMEOUT: '300'
+    volumes:
+    - storage:/data
+    - models:/models
+    command:
+    - python
+    - -m
+    - app.worker
+    depends_on:
+      mysql:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+  ollama:
+    image: ${OLLAMA_IMAGE:-ollama/ollama:0.40.12}
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+      OLLAMA_CONTEXT_LENGTH: ${OLLAMA_CONTEXT_LENGTH:-16384}
+      OLLAMA_NUM_PARALLEL: '1'
+      OLLAMA_MAX_LOADED_MODELS: '1'
+    volumes:
+    - ollama-models:/root/.ollama
+    - type: bind
+      source: ./storage/llm
+      target: /imports
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: ./infra/llm/Modelfile.gguf
+      target: /config/Modelfile
+      read_only: true
+      bind:
+        create_host_path: false
+    healthcheck:
+      test:
+      - CMD
+      - ollama
+      - list
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    depends_on:
+      init-env:
+        condition: service_completed_successfully
+  init-env:
+    image: deeplecture-php:local
+    volumes:
+    - .:/workspace
+    entrypoint:
+    - php
+    - -r
+    command:
+    - if (!file_exists('/workspace/.env')) { if (!copy('/workspace/.env.example',
+      '/workspace/.env')) { exit(1); } echo 'Created .env for local demo'.PHP_EOL;
+      } else { echo 'Existing .env preserved'.PHP_EOL; }
+volumes:
+  mysql-data: null
+  storage: null
+  models: null
+  ollama-models: null

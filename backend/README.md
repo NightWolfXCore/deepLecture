@@ -13,7 +13,6 @@ LLM-настройки нужны и search, и worker: при смене мод
 не поддерживаются; доступ к платформам и их CDN нужен отдельно.
 
 Если storage volume создан старой версией, подготовьте каталоги перед запуском
-нового worker (данные не удаляются; команда работает и в PowerShell):
 
 ```sh
 docker compose --env-file .env -f infra/compose.yml run --rm --no-deps --user root php sh -c 'mkdir -p /data/imports /data/downloads; chown 33:33 /data/videos /data/imports; chown 1000:1000 /data/downloads; chmod 2775 /data/videos; chmod 755 /data/imports /data/downloads'
@@ -25,45 +24,9 @@ URL хранится в приватном `storage/imports/<UUID>.json`; вре
 
 ## Быстрый запуск
 
-Из корня репозитория, Docker Engine + Compose v2:
-
-```sh
-cp .env.example .env
-# Укажите свой локальный DB_PASSWORD и настройки LLM в .env.
-docker compose --env-file .env -f infra/compose.yml build
-docker compose --env-file .env -f infra/compose.yml up -d mysql
-```
-
-Примените миграции участника БД согласно контракту. В этой ветке нет чужой
-production-системы миграций; приложение намеренно не выполняет DDL при старте.
-Для временной локальной разработки до получения миграций можно явно применить
-справочную схему из тестовой части ветки на **новую пустую БД**:
-
-```sh
-docker compose --env-file .env -f infra/compose.yml exec -T mysql sh -c \
- 'MYSQL_PWD="$MYSQL_PASSWORD" mysql -u"$MYSQL_USER" "$MYSQL_DATABASE"' \
- < tests/backend/fixtures/schema.sql
-```
-
-Не применяйте этот файл поверх существующей БД и не используйте как замену
-согласованным production-миграциям. После подготовки схемы:
-
-```sh
-docker compose --env-file .env -f infra/compose.yml up -d php search worker nginx
-curl -f http://127.0.0.1:8080/api/v1/health
-curl -f http://127.0.0.1:8080/api/v1/ready
-```
-
-`health` проверяет PHP; `ready` — соединение с БД и загруженную модель поиска.
-Это не подтверждение готовности конспектов: LLM проверяется реальным заданием.
-API доступен только на loopback; для удалённого доступа нужен собственный
-reverse proxy с TLS и контролем доступа. У MVP нет пользовательской авторизации.
-
-Первая загрузка моделей может занять несколько минут и требует места на диске.
-Веса остаются в volume `models`. Видео — `storage`, MySQL — `mysql-data`.
-`docker compose ... down` сохраняет данные; `down -v` удаляет их, для рабочей
-среды эту команду без намерения удалить данные не используйте.
-Live-процессы после перезапуска среды нужно запустить повторно.
+Полный запуск объединённого приложения, production-миграции и импорт Qwen3 4B
+GGUF описаны в [корневом README](../README.md#запуск). Используйте эту инструкцию
+для `dev` и `main`: отдельный checkout frontend и справочная тестовая схема не нужны.
 
 ## Конфигурация
 
@@ -80,7 +43,7 @@ Python: те же DB-параметры, `MODEL_CACHE`, `EMBEDDING_MODEL`,
 Конспекты: `LLM_BASE_URL` (URL с `/v1`), `LLM_MODEL`, `LLM_API_KEY`,
 `LLM_AUTH_MODE` (`bearer` по умолчанию, `none` — явное отключение авторизации),
 `LLM_TIMEOUT`, `LLM_ALLOW_HTTP` (`false` по умолчанию),
-`LLM_REASONING_EFFORT` (пусто по умолчанию; `none` для локального Qwen3.5 4B).
+`LLM_REASONING_EFFORT` (пусто по умолчанию; `none` для локального Qwen3 4B).
 Адаптер использует OpenAI-compatible `/chat/completions` и JSON response format.
 Другой провайдер должен поддерживать этот протокол; произвольный API без адаптера
 не заработает. HTTP допускается явным `LLM_ALLOW_HTTP=true` для локального
@@ -132,50 +95,14 @@ summarizing, но готовые
 завершение попытки, **а не успешное создание конспекта**. Проверяйте состояние
 лекции и `availability`. В логах используются безопасные коды без ключей и SQL.
 
-## Тесты: только ветка backend
+## Тесты
 
-Основной воспроизводимый прогон без оплачиваемых API и загрузки весов:
+Тестовый набор и инструкции доступны в [ветке backend](https://github.com/NightWolfXCore/deepLecture/tree/backend/tests/backend).
+В dev они сохраняются отдельно от runtime-изменений; в main тестов нет.
+Их подмены моделей подтверждают протоколы и обработку данных, а не качество ML.
 
-```sh
-sh tests/backend/run.sh
-```
+## Ветки и тесты
 
-Тестовый Compose использует отдельный project `deeplecture-test`, БД
-`deeplecture_test` и собственные volumes, которые удаляются после прогона.
-Производственные services не переводятся в mock-режим: тестовая подмена модели
-подключается отдельным модулем только в test override.
-Все команды и ограничения — в `tests/backend/README.md`.
-
-Локально Python unit-тесты (Python 3.11/3.12, FFmpeg в PATH):
-
-```sh
-python -m venv .venv
-. .venv/bin/activate
-pip install -r backend/python/requirements.txt -r tests/backend/requirements.txt
-PYTHONPATH=backend/python python -m pytest -q tests/backend/python
-```
-
-Без `RUN_MYSQL_TESTS=1` DB-тесты будут явно пропущены. Их нужно отдельно
-выполнить на изолированной БД `_test`; интеграционный launcher делает это.
-PHP unit: `php tests/backend/php/unit.php` (PHP с mbstring, curl, pdo_mysql).
-Полные локальные ML-зависимости: `requirements-ml.txt`, CPU torch отдельно по
-команде из Python Dockerfile. Для HTTP/unit тестов они не требуются.
-
-Автотесты проверяют API, транзакции, lease, обработку ошибок, формат векторов
-и FFmpeg. Подмены ASR/E5/LLM проверяют обработку данных, но не качество моделей.
-Для итоговой приёмки нужен реальный ролик с речью и минимум пять запросов-
-перефразирований с заранее указанными ожидаемыми фрагментами.
-
-## Перенос в main без тестов
-
-Ветка `main` этой работой не изменяется. Реализация и тесты сохраняются отдельными
-коммитами: runtime-коммит `feat: implement PHP and Python lecture backend`,
-затем тестовый `test: add isolated backend validation suite`.
-При интеграции в main переносите только runtime-коммит (и необходимые контракты
-из dev), а не сливайте всю backend-ветку. Тестовый коммит не cherry-pick'ать.
-Runtime Compose не ссылается на тестовые файлы: production-схему предоставляет
-участник БД. Раздел с временной справочной схемой выше относится только к backend.
-
-Git не исключает файлы из merge по `.gitignore`: полный merge backend перенесёт
-и тесты. Перед публикацией проверяйте состав изменения. CI и тесты можно
-продолжать выполнять в backend независимо от состава main.
+Объединённое приложение публикуется в `main` по прямому запросу пользователя.
+Тестовые файлы и workflow остаются в ветках разработки, в итоговом дереве
+`main` их нет. Результаты проверок: [RELEASE.md](RELEASE.md).

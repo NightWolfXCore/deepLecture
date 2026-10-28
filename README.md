@@ -35,7 +35,7 @@ deepLecture помогает искать **по смыслу**. Задайте 
 | Конспект и оглавление | Формирует краткое содержание и главы, привязанные к транскрипту |
 | Чат по лекции | Подбирает контекст для LLM и проверяет ссылки на источники |
 | Ключевые термины | Выделяет слова и фразы с упоминаниями в транскрипте |
-| Локальные модели | Подготовлена конфигурация Whisper, E5 и Qwen3.5 4B |
+| Локальные модели | Подготовлена конфигурация Whisper, E5 и Qwen3 4B |
 
 Интерфейс включает каталог, плеер, транскрипт, поиск, конспект и чат.
 Доступность результатов определяется готовностью соответствующего этапа:
@@ -70,7 +70,7 @@ flowchart LR
 | Видео и аудио | FFmpeg, ffprobe, yt-dlp, Deno |
 | Распознавание | faster-whisper |
 | Эмбеддинги | intfloat/multilingual-e5-small, 384 компонента |
-| Конспекты и ответы | OpenAI-compatible API; локально Ollama + Qwen3.5 4B |
+| Конспекты и ответы | OpenAI-compatible API; локально Ollama + Qwen3 4B |
 | Хранение и запуск | MySQL 8.4, файловые volumes, Nginx, PHP-FPM, Docker Compose |
 
 Браузер обращается к PHP API. Внутренний FastAPI и LLM не публикуются напрямую.
@@ -79,60 +79,126 @@ flowchart LR
 
 ## Ветки и документация
 
-Компоненты разрабатываются отдельно. **Наличие этого README в dev не означает,
-что реализации уже объединены в этой ветке.**
-
-| Ветка | Содержимое |
-|---|---|
-| `dev` | Общая документация и интеграция команды |
-| `backend` | PHP/Python API, worker, инфраструктура, инструкции и тесты |
-| `frontend` | Веб-интерфейс |
-| `repository_sql` | Production-миграции, seeds и проверки БД |
+В `dev` объединены backend, frontend и production-миграции MySQL.
+`main` содержит интегрированный вариант для демонстрации; тесты остаются в
+ветках разработки. Ветки компонентов сохраняются для дальнейшей работы.
 
 - [Архитектура проекта](architecture/architecture.md)
-- [HTTP-контракт](contracts/http-api.md)
+- [HTTP API: запросы, ответы и ошибки](contracts/http-api.md)
 - [Контракт хранения](contracts/database.md)
-- [Запуск backend](https://github.com/NightWolfXCore/deepLecture/blob/backend/backend/README.md)
-- [Подключение frontend](https://github.com/NightWolfXCore/deepLecture/blob/backend/backend/FRONTEND.md)
-- [Настройка LLM](https://github.com/NightWolfXCore/deepLecture/blob/backend/backend/LLM.md)
-- [Локальный GGUF на Windows / PowerShell](https://github.com/NightWolfXCore/deepLecture/blob/backend/backend/GGUF-WINDOWS.md)
-- [Результаты проверок](https://github.com/NightWolfXCore/deepLecture/blob/backend/tests/backend/VALIDATION.md)
-
-Контракты в отдельных ветках могут обновляться в разное время. При интеграции
-используйте актуальные версии вместе с соответствующим кодом.
+- [Настройка LLM и офлайн-режима](backend/LLM.md)
+- [Состояние и ограничения проверки](backend/STATUS.md)
 
 ## Запуск
 
-Пока ветки не объединены, инструкции запуска находятся в `backend`.
-Для Docker-сценария нужен запущенный Docker Desktop с Linux containers
-или Docker Engine с Compose v2. Команды подготовки для Windows PowerShell:
+Нужны запущенный Docker Desktop с **Linux containers** или Docker Engine,
+Docker Compose v2 и Git. Ollama отдельно устанавливать не нужно: она запускается
+контейнером. Команды ниже одинаковы для терминалов Windows, Linux и macOS.
+Выполняйте их из корня репозитория.
 
-```powershell
-git clone https://github.com/NightWolfXCore/deepLecture.git
-Set-Location deepLecture
-git switch backend
+### 1. Получить проект и подготовить конфигурацию
 
-if (-not (Test-Path .env)) {
-    Copy-Item .env.example .env
-}
+```text
+git clone --branch main https://github.com/NightWolfXCore/deepLecture.git
+cd deepLecture
 ```
 
-Далее по [инструкции backend](https://github.com/NightWolfXCore/deepLecture/blob/backend/backend/README.md):
+Для существующего checkout сохраните свои изменения, затем:
 
-1. Настройте переменные окружения. Общий Compose требует непустой `DB_PASSWORD`;
-   существующий пароль автоматически не назначается и не угадывается.
-2. Соберите образы и примените миграции участника БД к подготовленной MySQL.
-3. Подготовьте веса Whisper/E5 и выберите внешний либо локальный LLM.
-4. Подключите checkout фронтенда через предусмотренный Compose override.
-5. Запустите сервисы и проверьте `/api/v1/health` и `/api/v1/ready`.
+```text
+git fetch origin
+git switch main
+git pull --ff-only origin main
+```
 
-Ollama отдельно устанавливать на Windows не нужно при использовании её
-Docker-сервиса. Образ сервера и веса модели загружаются отдельно. Скачанный
-GGUF можно импортировать через Modelfile; исходный файл хранится в
-`storage/llm/`, вне Git. Подробности — в инструкции PowerShell выше.
+`.env` создаётся **автоматически** при `up -d mysql ollama`, если его ещё нет.
+По умолчанию локальная MySQL использует `root` с **пустым паролем** только
+внутри Docker-сети, без публикации порта БД. От вас требуется только GGUF.
+Существующий `.env` сохраняется. Локальный Compose явно задаёт пустой пароль
+и параметры Qwen3, поэтому вручную менять конфигурацию не требуется.
+Проект называется `deeplecture-demo` и использует собственные volumes.
 
-Секреты, загруженные видео и веса моделей не коммитятся. Для текущего MVP
-предусмотрена закрытая демонстрация без пользовательской авторизации.
+Создайте папку **`storage/llm`** и положите туда полный файл **Qwen3 4B Q4 GGUF**
+под именем **`model.gguf`**. Итоговый путь от корня: `storage/llm/model.gguf`.
+Не используйте `mmproj`, адаптер или одну часть разделённой модели.
+Q4_K_M подходит. Импорт сохраняет квантизацию исходного файла.
+Файл GGUF, видео и секреты не коммитятся и не включаются в build-контекст.
+
+Все подключения и имя импортируемой модели уже заданы в корневом
+`compose.yaml`. `.env.llm`, дополнительные `-f` и ручная настройка не нужны.
+
+### 2. Собрать образы, применить миграции и подготовить модели
+
+```text
+docker compose config --quiet
+docker compose build php search
+docker compose up -d mysql ollama
+docker compose run --rm migrate
+docker compose exec ollama ollama create deeplecture-qwen3:4b -f /config/Modelfile
+docker compose exec ollama ollama show deeplecture-qwen3:4b
+docker compose run --rm --no-deps worker python -m app.prepare_models
+docker compose run --rm --no-deps worker python -m app.check_llm
+```
+
+Выполняйте команды последовательно; при ошибке сначала исправьте её.
+`php` и `search` собирают PHP и общий Python-образ, используемый также worker
+и мигратором. `migrate` ждёт готовности MySQL и применяет **production-миграции
+из `migrations/`**. Повторный запуск безопасен; тестовые seeds не нужны.
+Уже применённые SQL-файлы изменять нельзя.
+
+`ollama create` импортирует ваш файл. `ollama show` показывает реальный тип
+квантизации: убедитесь, что это Q4 и нужная модель Qwen3 4B.
+`prepare_models` отдельно загружает настоящие Whisper и E5; GGUF их не заменяет.
+Первая сборка и загрузка весов требуют интернета, места на диске и могут занять
+значительное время. Нужна RAM для Whisper, E5 и Qwen одновременно.
+`check_llm` делает настоящий запрос к Qwen и проверяет JSON-ответ.
+
+### 3. Запустить приложение
+
+```text
+docker compose up -d
+docker compose ps
+```
+
+Откройте **http://localhost:8080**. Отдельный сервер frontend не нужен.
+Bootstrap поставляется локально; внешний CDN интерфейсу не требуется.
+Проверки в браузере:
+
+- http://localhost:8080/api/v1/health — PHP API;
+- http://localhost:8080/api/v1/ready — соединение с MySQL и готовность поиска.
+
+После старта E5 может загружаться некоторое время. Готовность LLM проверяется
+отдельной командой `check_llm`. Загрузите короткое MP4/WebM с речью, дождитесь
+обработки и проверьте поиск, перемотку, транскрипт, конспект и чат.
+Импорт YouTube/Vimeo требует доступа к платформам/CDN; приватные видео,
+cookies и DRM не поддерживаются. Скорость реальной обработки на CPU не измерена.
+
+### Управление и диагностика
+
+```text
+docker compose logs --tail 100 worker search nginx
+docker compose run --rm migrate python /app/migrate.py --status
+docker compose restart worker search
+docker compose stop
+docker compose up -d
+docker compose down
+```
+
+`stop` останавливает контейнеры; `up -d` запускает их; `down` удаляет контейнеры
+и сеть, сохраняя данные. **Не используйте `down -v`: он удалит БД, видео и веса.**
+Данные сохраняются в volumes `mysql-data`, `storage`, `models`, `ollama-models`.
+Исходный GGUF остаётся в `storage/llm`, импорт — в volume Ollama.
+
+Если storage volume создан старой версией приложения, один раз подготовьте
+каталоги следующей командой перед запуском worker:
+
+```text
+docker compose run --rm --no-deps --user root php sh -c 'mkdir -p /data/imports /data/downloads; chown 33:33 /data/videos /data/imports; chown 1000:1000 /data/downloads; chmod 2775 /data/videos; chmod 755 /data/imports /data/downloads'
+```
+
+MVP доступен только на localhost и не имеет пользовательской авторизации.
+Для внешнего доступа нужен защищённый reverse proxy. Дополнительные варианты
+с внешним LLM и офлайн-сетью: [LLM.md](backend/LLM.md).
 
 ## API
 
@@ -160,19 +226,18 @@ ID лекций — UUID, таймкоды — целые миллисекунд
 Range. Используйте возвращённый `media_url`; ссылка `playback_url` из поиска
 ведёт на интерфейс с параметрами лекции и времени.
 
-Примеры для **PowerShell** после запуска сервисов:
+Пример JSON для `POST /api/v1/search` (Postman или любой HTTP-клиент):
 
-```powershell
-Invoke-RestMethod http://localhost:8080/api/v1/health
-Invoke-RestMethod http://localhost:8080/api/v1/ready
+```json
+{"query":"Как связаны стороны треугольника?","limit":5}
+```
 
-# Поиск по всем готовым лекциям:
-$body = @{ query = 'Как связаны стороны треугольника?'; limit = 5 } | ConvertTo-Json
-Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/v1/search -ContentType 'application/json; charset=utf-8' -Body ([System.Text.Encoding]::UTF8.GetBytes($body))
+Чтобы искать внутри одной лекции, добавьте `"lecture_id":"UUID_ЛЕКЦИИ"`.
+Загрузка `POST /lectures` использует multipart form-data с `title` и `file`.
+Импорт `POST /lectures/import` использует JSON:
 
-# Загрузка файла; укажите существующий путь. curl.exe используется явно,
-# поскольку в Windows PowerShell имя curl может быть псевдонимом другой команды.
-curl.exe -F 'title=Демонстрационная лекция' -F 'file=@C:/Videos/lecture.mp4' http://localhost:8080/api/v1/lectures
+```json
+{"title":"Моя лекция","url":"https://www.youtube.com/watch?v=VIDEO_ID"}
 ```
 
 Загрузка и импорт возвращают `202 Accepted`: задание поставлено в очередь.
@@ -180,7 +245,7 @@ curl.exe -F 'title=Демонстрационная лекция' -F 'file=@C:/V
 могут возвращать 409; ошибки конспекта не обязательно делают поиск недоступным.
 
 Полные тела запросов, ответы, лимиты и коды ошибок:
-[актуальный HTTP-контракт backend](https://github.com/NightWolfXCore/deepLecture/blob/backend/contracts/http-api.md).
+[HTTP-контракт](contracts/http-api.md).
 FastAPI `/internal/v1/*` предназначен для PHP и не является публичным API.
 
 ## Состояние проекта
@@ -195,8 +260,8 @@ FastAPI `/internal/v1/*` предназначен для PHP и не являе�
 
 Пока не подтверждены реальное скачивание с YouTube/Vimeo, inference
 Whisper/E5/Qwen, точность попадания ASR в речь, полный браузерный сценарий
-и работа всего приложения без интернета. Новый production-образ после
-добавления зависимостей импорта требует сборки и проверки.
+и работа всего приложения без интернета. Результат финальной интеграционной
+проверки записан в [отчёте](backend/RELEASE.md).
 
 ## Планы развития
 
